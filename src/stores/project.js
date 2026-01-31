@@ -630,7 +630,7 @@ export const useProjectStore = defineStore('project', {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${this.activeProject.name.replace(/\s+/g, '_')}.artsc`
+      a.download = `${this.activeProject.name.replace(/\s+/g, '_')}.asxpro`
       a.click()
       URL.revokeObjectURL(url)
     },
@@ -641,7 +641,7 @@ export const useProjectStore = defineStore('project', {
         const newId = this.createProject(data.format || 'Film')
         const project = this.projects.find((p) => p.id === newId)
 
-        project.name = data.projectName || fileName.replace('.artsc', '')
+        project.name = data.projectName || fileName.replace(/\.(asxpro|artsc|json)$/i, '')
         project.lines = data.lines || []
         project.titlePage = data.titlePage || project.titlePage
         project.characterData = data.characterData || {}

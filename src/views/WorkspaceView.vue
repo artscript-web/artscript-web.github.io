@@ -169,7 +169,7 @@
       ref="fileInput"
       @change="handleImport"
       style="display: none"
-      accept=".artsc,.json,.fountain"
+      accept=".asxpro,.fountain"
     />
   </div>
 </template>

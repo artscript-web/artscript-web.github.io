@@ -59,7 +59,7 @@
             ref="fileInput"
             @change="handleImport"
             style="display: none"
-            accept=".artsc,.json,.fountain"
+            accept=".asxpro,.fountain"
           />
           <button class="open-file-btn" @click="$refs.fileInput.click()">
             <i class="pi pi-folder-open"></i> Open From File
