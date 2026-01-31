@@ -125,6 +125,9 @@ const exportPDF = async () => {
     // Enable UTF-8 encoding for Greek characters
     pdf.setLanguage(language.value === 'el' ? 'el' : 'en')
 
+    // Prevent extra space between letters (fixes sporadic spacing on some browsers/environments e.g. GitHub)
+    pdf.setCharSpace(0)
+
     const pageWidth = 612
     const pageHeight = 792
     const leftMargin = 108 // 1.5 inches
@@ -144,6 +147,7 @@ const exportPDF = async () => {
       addTitlePage(pdf, pageWidth, pageHeight)
       pdf.addPage()
       pageNumber++
+      pdf.setCharSpace(0) // Reset so first script line doesn't get wrong spacing
     }
 
     // Process each line
@@ -163,12 +167,14 @@ const exportPDF = async () => {
         pdf.addPage()
         pageNumber++
         yPosition = topMargin
+        pdf.setCharSpace(0) // Reset so first line on new page doesn't get wrong spacing
 
         // Add page number to footer (except first page)
         if (pageNumber > 1) {
           pdf.setFontSize(10)
           pdf.text(`${pageNumber}.`, pageWidth - rightMargin, pageHeight - bottomMargin + 20, {
             align: 'right',
+            charSpace: 0,
           })
         }
       }
@@ -216,94 +222,94 @@ const containsGreek = (text) => {
   return /[\u0370-\u03FF\u1F00-\u1FFF]/.test(text)
 }
 
-// Helper function to render text with proper encoding for Greek
-const renderText = (pdf, text, x, y, options = {}) => {
-  // If language is Greek or text contains Greek characters, use canvas-based rendering
-  if (language.value === 'el' || containsGreek(text)) {
-    try {
-      const fontSize = pdf.getFontSize() || 12
-      const font = pdf.internal.getFont()
-      const fontStyle = font.fontStyle || 'normal'
-      const fontWeight = fontStyle.includes('bold') ? 'bold' : 'normal'
-      const fontStyleCSS = fontStyle.includes('italic') ? 'italic' : 'normal'
-      
-      // Create a canvas to render the text with high resolution
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      
-      // Use high DPI scale factor for crisp rendering (6x for maximum quality)
-      const scale = 6
-      
-      // Set font to measure text (at 1x scale first)
-      ctx.font = `${fontWeight} ${fontStyleCSS} ${fontSize}pt 'Courier New', monospace`
-      const metrics = ctx.measureText(text)
-      const textWidth = Math.ceil(metrics.width)
-      const textHeight = fontSize * 1.2
-      
-      // Set canvas size with padding at high resolution
-      const padding = 4
-      canvas.width = (textWidth + padding * 2) * scale
-      canvas.height = (textHeight + padding * 2) * scale
-      
-      // Scale the context for high DPI rendering
-      ctx.scale(scale, scale)
-      
-      // Clear canvas with white background
-      ctx.fillStyle = '#FFFFFF'
-      ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale)
-      
-      // Set font properties for rendering
-      ctx.font = `${fontWeight} ${fontStyleCSS} ${fontSize}pt 'Courier New', monospace`
-      ctx.fillStyle = '#000000'
-      ctx.textBaseline = 'top'
-      
-      // Enable better text rendering quality
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      
-      // Calculate x position based on alignment
-      let textX = padding
-      if (options.align === 'right') {
-        textX = (canvas.width / scale) - padding
-        ctx.textAlign = 'right'
-      } else if (options.align === 'center') {
-        textX = (canvas.width / scale) / 2
-        ctx.textAlign = 'center'
-      } else {
-        ctx.textAlign = 'left'
-      }
-      
-      // Render text on canvas
-      ctx.fillText(text, textX, padding)
-      
-      // Convert canvas to image data
-      const imgData = canvas.toDataURL('image/png')
-      
-      // Calculate PDF position - adjust y to account for baseline
-      const pdfY = y - fontSize * 0.2 // Adjust for proper vertical alignment
-      
-      // Add image to PDF at original size (scale compensates for high DPI)
-      const imgWidth = (textWidth + padding * 2) * 0.75 // Convert pixels to points (72 DPI)
-      const imgHeight = (textHeight + padding * 2) * 0.75
-      
-      // Adjust x position for alignment
-      let pdfX = x
-      if (options.align === 'right') {
-        pdfX = x - imgWidth
-      } else if (options.align === 'center') {
-        pdfX = x - imgWidth / 2
-      }
-      
-      pdf.addImage(imgData, 'PNG', pdfX, pdfY, imgWidth, imgHeight)
-    } catch (error) {
-      // Fallback to regular text method
-      console.warn('Failed to render Greek text with canvas, falling back:', error)
-      pdf.text(text, x, y, options)
-    }
+// Script body: left only, no justify, no letter/word spacing. Title page & transitions use center/right.
+const SCRIPT_TEXT_OPTIONS = { align: 'left', charSpace: 0 }
+
+/**
+ * Render a single line of text to canvas and add as image to PDF.
+ * Used for ALL screenplay body text (sluglines, action, dialogue, etc.) so we control
+ * alignment (left, never justify), letter-spacing (0), and natural Courier width (no stretch).
+ * Canvas is sized to measured text width only - renderer never stretches to fill container.
+ */
+function renderTextViaCanvas(pdf, text, x, y, options = {}) {
+  const fontSize = pdf.getFontSize() || 12
+  const font = pdf.internal.getFont()
+  const fontStyle = font.fontStyle || 'normal'
+  const fontWeight = fontStyle.includes('bold') ? 'bold' : 'normal'
+  const fontStyleCSS = fontStyle.includes('italic') ? 'italic' : 'normal'
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  // Standard Courier: measure natural width only (no stretch to container)
+  ctx.font = `${fontWeight} ${fontStyleCSS} ${fontSize}pt 'Courier New', Courier, monospace`
+  const metrics = ctx.measureText(text)
+  const textWidth = Math.ceil(metrics.width)
+  const textHeight = fontSize * 1.2
+
+  const scale = 6
+  const padding = 4
+  canvas.width = Math.round((textWidth + padding * 2) * scale)
+  canvas.height = Math.round((textHeight + padding * 2) * scale)
+  ctx.scale(scale, scale)
+
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale)
+  ctx.font = `${fontWeight} ${fontStyleCSS} ${fontSize}pt 'Courier New', Courier, monospace`
+  ctx.fillStyle = '#000000'
+  ctx.textBaseline = 'top'
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
+  // Left align only for script body; center/right only for title page & transitions
+  let textX = padding
+  if (options.align === 'right') {
+    textX = (canvas.width / scale) - padding
+    ctx.textAlign = 'right'
+  } else if (options.align === 'center') {
+    textX = (canvas.width / scale) / 2
+    ctx.textAlign = 'center'
   } else {
-    // For non-Greek text, use regular text method
-    pdf.text(text, x, y, options)
+    ctx.textAlign = 'left'
   }
+  // No letter-spacing: use default. Canvas has no text-align-last; we draw one line so N/A.
+  ctx.fillText(text, textX, padding)
+
+  const imgData = canvas.toDataURL('image/png')
+  const pdfY = y - fontSize * 0.2
+  const imgWidth = Math.round((textWidth + padding * 2) * 0.75 * 100) / 100
+  const imgHeight = Math.round((textHeight + padding * 2) * 0.75 * 100) / 100
+
+  let pdfX = x
+  if (options.align === 'right') pdfX = x - imgWidth
+  else if (options.align === 'center') pdfX = x - imgWidth / 2
+
+  pdf.addImage(imgData, 'PNG', pdfX, pdfY, imgWidth, imgHeight)
+}
+
+/**
+ * Render text: use canvas for all screenplay body (left-aligned) to avoid jsPDF
+ * justify/word-spacing on first/last lines. Use pdf.text() only for title page & transitions (center/right).
+ */
+const renderText = (pdf, text, x, y, options = {}) => {
+  const useCanvas =
+    options.align !== 'center' && options.align !== 'right'
+  if (useCanvas) {
+    try {
+      renderTextViaCanvas(pdf, text, x, y, { ...options, align: 'left' })
+    } catch (error) {
+      console.warn('Canvas render failed, falling back to pdf.text:', error)
+      pdf.setCharSpace(0)
+      pdf.text(text, x, y, { align: 'left', charSpace: 0 })
+    }
+    return
+  }
+  // Title page & transitions: center/right via jsPDF
+  pdf.setCharSpace(0)
+  pdf.text(text, x, y, {
+    align: options.align,
+    charSpace: 0,
+  })
 }
 
 const addTitlePage = (pdf, pageWidth, pageHeight) => {
@@ -418,6 +424,9 @@ const addTitlePage = (pdf, pageWidth, pageHeight) => {
 
 const renderLine = (pdf, line, y, leftMargin, rightMargin, usableWidth, sceneNumber) => {
   const content = line.content || ''
+
+  // Keep character spacing at 0 so first/last line of block or page don't get big gaps
+  pdf.setCharSpace(0)
 
   // Set formatting based on line type
   switch (line.type) {

@@ -19,7 +19,11 @@
                 <button class="dropdown-item" @click="createNewProject('TV Show')">
                   <i class="pi pi-desktop"></i> TV Show
                 </button>
-                <button class="dropdown-item" @click="createNewProject('Book')">
+                <button
+                  class="dropdown-item dropdown-item-coming-soon"
+                  title="Book format coming soon"
+                  @click="showBookComingSoon = true; isFileMenuOpen = false"
+                >
                   <i class="pi pi-book"></i> Book
                 </button>
               </div>
@@ -212,6 +216,17 @@
     </header>
 
     <TabBar />
+
+    <!-- Book format coming soon popup -->
+    <div v-if="showBookComingSoon" class="book-coming-soon-overlay" @click.self="showBookComingSoon = false">
+      <div class="book-coming-soon-dialog">
+        <h2 class="book-coming-soon-title">ArtScript <strong>Book</strong></h2>
+        <p class="book-coming-soon-text">
+          Book format is coming soon. You will be able to write long-form prose with chapters and body text. For now, use Film or TV Show for screenplay projects.
+        </p>
+        <button type="button" class="book-coming-soon-close" @click="showBookComingSoon = false">OK</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -225,6 +240,7 @@ const store = useProjectStore()
 const router = useRouter()
 
 const isFileMenuOpen = ref(false)
+const showBookComingSoon = ref(false)
 
 const stats = computed(() => store.scriptStats)
 
@@ -422,5 +438,90 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* Book option: greyed out, coming soon */
+.dropdown-item-coming-soon {
+  color: #999 !important;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.dropdown-item-coming-soon:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #666 !important;
+}
+:global(body.dark-mode) .dropdown-item-coming-soon {
+  color: #666 !important;
+}
+:global(body.dark-mode) .dropdown-item-coming-soon:hover {
+  color: #888 !important;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Book coming soon popup */
+.book-coming-soon-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.book-coming-soon-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px 28px;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.book-coming-soon-title {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 300;
+  color: #333;
+  font-family: 'Montserrat', sans-serif;
+}
+.book-coming-soon-title strong {
+  font-weight: 900;
+  -webkit-text-stroke: 0.4px currentColor;
+  paint-order: stroke fill;
+}
+.book-coming-soon-text {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #555;
+}
+.book-coming-soon-close {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14px;
+  background: #333;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.book-coming-soon-close:hover {
+  background: #444;
+}
+:global(body.dark-mode) .book-coming-soon-dialog {
+  background: #2a2a2a;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+:global(body.dark-mode) .book-coming-soon-title {
+  color: #e0e0e0;
+}
+:global(body.dark-mode) .book-coming-soon-text {
+  color: #b0b0b0;
+}
+:global(body.dark-mode) .book-coming-soon-close {
+  background: #444;
+  color: #e0e0e0;
+}
+:global(body.dark-mode) .book-coming-soon-close:hover {
+  background: #555;
 }
 </style>

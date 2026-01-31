@@ -821,9 +821,18 @@ export const useProjectStore = defineStore('project', {
           // Parse content lines
           if (!inTitlePage) {
             const upper = line.toUpperCase()
-            
-            // Scene heading (INT. or EXT.)
-            if (upper.startsWith('INT.') || upper.startsWith('EXT.')) {
+            const lower = line.toLowerCase()
+            const isFirstContentLine = projectLines.length === 0
+
+            // Scene heading: INT./EXT./ΕΣΩ./ΕΞΩ./έσω./έξω. (and variants) – always force on first line when present
+            const isSceneHeading =
+              upper.startsWith('INT.') || upper.startsWith('EXT.') ||
+              upper.startsWith('ΕΣΩ.') || upper.startsWith('ΕΞΩ.') ||
+              lower.startsWith('int.') || lower.startsWith('ext.') ||
+              lower.startsWith('εσω.') || lower.startsWith('εξω.') ||
+              line.startsWith('έσω.') || line.startsWith('έξω.') ||
+              line.startsWith('Έσω.') || line.startsWith('Έξω.')
+            if (isSceneHeading || (isFirstContentLine && /^(int\.|ext\.|εσω\.|εξω\.|έσω\.|έξω\.)/i.test(line))) {
               projectLines.push({
                 id: uuidv4(),
                 type: 'scene-heading',

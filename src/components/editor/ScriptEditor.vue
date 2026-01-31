@@ -133,6 +133,11 @@ const isExternalUpdate = ref(false) // Track if update is from undo/redo
 const isSelecting = ref(false) // Track if user is selecting across lines
 const selectionStart = ref({ lineIndex: null, offset: null }) // Track selection start
 
+// Global cursor position tracker: restored after any re-render/DOM overwrite (e.g. setLineRef, watchers)
+const pendingCursorRestore = ref(null) // { index, startOffset, endOffset } or null
+// When true, do not restore cursor (e.g. after Enter so browser/default logic moves to new line)
+const skipNextCursorRestore = ref(false)
+
 // Annotation (inline note) state
 const contextMenu = ref({ visible: false, x: 0, y: 0 })
 const notePopover = ref({ visible: false, x: 0, y: 0, content: '' })
@@ -167,7 +172,13 @@ const setLineRef = (el, index) => {
     // Set content immediately - ensure it's always set, even if empty
     const content = line.content || ''
     if (el.innerText !== content) {
+      // Before overwriting DOM, capture cursor if selection is in this line (so we can restore after re-render)
+      const captured = captureCursorPosition()
+      if (captured && captured.index === index) {
+        pendingCursorRestore.value = { index: captured.index, startOffset: captured.startOffset, endOffset: captured.endOffset }
+      }
       el.innerText = content
+      nextTick(restorePendingCursor)
     }
     
     // Ensure the element is focusable and editable
@@ -265,6 +276,22 @@ const handleLineInput = (event, lineId, index) => {
   // Prevent reactivity loop
   isExternalUpdate.value = false
 
+  // Save cursor position before any state update (so we can restore after scene-heading conversion)
+  let savedCursor = null
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount) {
+    const range = sel.getRangeAt(0)
+    if (event.target.contains(range.startContainer)) {
+      const preRange = range.cloneRange()
+      preRange.selectNodeContents(event.target)
+      preRange.setEnd(range.startContainer, range.startOffset)
+      const startOffset = preRange.toString().length
+      preRange.setEnd(range.endContainer, range.endOffset)
+      const endOffset = preRange.toString().length
+      savedCursor = { index, startOffset, endOffset }
+    }
+  }
+
   // Update store
   const line = lines.value.find((l) => l.id === lineId)
   if (line) {
@@ -274,8 +301,8 @@ const handleLineInput = (event, lineId, index) => {
     // Directly update without triggering watcher
     line.content = newContent
 
-    // Auto-detect type changes
-    autoDetectType(lineId, newContent)
+    // Auto-detect type changes (returns true if converted to scene-heading)
+    const convertedToSceneHeading = autoDetectType(lineId, newContent)
     
     // If this is a character line, update (CONT'D) status
     if (line.type === 'character') {
@@ -304,6 +331,20 @@ const handleLineInput = (event, lineId, index) => {
       if (previousContent !== newContent || previousType !== line.type) {
         updateContdBelow(index)
       }
+    }
+
+    // Restore cursor after scene-heading conversion (DOM updates in nextTick)
+    if (convertedToSceneHeading && savedCursor) {
+      nextTick(() => {
+        if (skipNextCursorRestore.value) {
+          skipNextCursorRestore.value = false
+          return
+        }
+        const el = lineRefs.value[savedCursor.index]
+        if (el) {
+          restoreCursorInElement(el, savedCursor.startOffset, savedCursor.endOffset)
+        }
+      })
     }
 
     // Recalculate page breaks (debounced)
@@ -402,31 +443,78 @@ const updateContdBelow = (changedIndex) => {
   })
 }
 
-// Auto-detect line type based on content
+// First line of script: force scene heading when content starts with int./ext./εσω./εξω./έσω./έξω. (any case).
+// Use explicit lower/startsWith for "int." and "ext." to avoid locale issues (e.g. Turkish toUpperCase).
+function isSceneHeadingStart(trimmed) {
+  const lower = trimmed.toLowerCase()
+  return (
+    lower.startsWith('int.') ||
+    lower.startsWith('ext.') ||
+    trimmed.startsWith('εσω.') ||
+    trimmed.startsWith('εξω.') ||
+    trimmed.startsWith('ΕΣΩ.') ||
+    trimmed.startsWith('ΕΞΩ.') ||
+    trimmed.startsWith('έσω.') ||
+    trimmed.startsWith('έξω.') ||
+    trimmed.startsWith('Έσω.') ||
+    trimmed.startsWith('Έξω.')
+  )
+}
+
+// When scene heading starts with έσω./έξω. (or Έσω./Έξω.), normalize to ΕΣΩ./ΕΞΩ. and update line content.
+function normalizeGreekSceneHeadingPrefix(lineId, content) {
+  const trimmed = content.trim()
+  let normalizedTrimmed = trimmed
+  if (trimmed.startsWith('έσω.') || trimmed.startsWith('Έσω.')) {
+    normalizedTrimmed = 'ΕΣΩ.' + trimmed.slice(4)
+  } else if (trimmed.startsWith('έξω.') || trimmed.startsWith('Έξω.')) {
+    normalizedTrimmed = 'ΕΞΩ.' + trimmed.slice(4)
+  }
+  if (normalizedTrimmed === trimmed) return
+  const start = content.indexOf(trimmed)
+  if (start === -1) return
+  const newContent = content.slice(0, start) + normalizedTrimmed
+  store.updateLine(lineId, newContent)
+}
+
+// Auto-detect line type based on content. Returns true if line was converted to scene-heading.
 const autoDetectType = (lineId, content) => {
   // Disable auto-detection for Book format (Word-like behavior)
-  if (isBookFormat.value) return
+  if (isBookFormat.value) return false
 
   const trimmed = content.trim()
   const upper = trimmed.toUpperCase()
+  const lower = trimmed.toLowerCase()
 
   const line = lines.value.find((l) => l.id === lineId)
-  if (!line) return
+  if (!line) return false
   
   const previousType = line.type
   const lineIndex = lines.value.findIndex((l) => l.id === lineId)
+
+  // First line of script: force scene heading when it starts with int./ext./εσω./εξω./έσω./έξω.
+  if (lineIndex === 0 && isSceneHeadingStart(trimmed)) {
+    if (line.type !== 'scene-heading') {
+      line.type = 'scene-heading'
+      updateContdBelow(lineIndex)
+      store.selectedSceneId = null
+      normalizeGreekSceneHeadingPrefix(lineId, content)
+      return true
+    }
+    normalizeGreekSceneHeadingPrefix(lineId, content)
+    return false
+  }
 
   // Detect notes (check first - lines starting with "//")
   if (trimmed.startsWith('//')) {
     if (line.type !== 'note') {
       line.type = 'note'
     }
-    return
+    return false
   }
 
   // Detect transitions (check first, as they might contain "FADE IN:")
   // Check both uppercase and lowercase
-  const lower = trimmed.toLowerCase()
   if (upper.startsWith('FADE IN:') || lower.startsWith('fade in:') ||
       upper.startsWith('FADE OUT:') || lower.startsWith('fade out:') ||
       upper === 'FADE IN' || lower === 'fade in' ||
@@ -448,30 +536,29 @@ const autoDetectType = (lineId, content) => {
         }
       })
     }
-    return
+    return false
   }
 
-  // Detect scene headings (English and Greek) - INT./EXT./ΕΣΩ./ΕΞΩ., Int./Ext./Εσω./Εξω., int./ext./εσω./εξω.
-  if (upper.startsWith('INT.') || upper.startsWith('EXT.') || 
-      upper.startsWith('ΕΣΩ.') || upper.startsWith('ΕΞΩ.') ||
-      trimmed.startsWith('Int.') || trimmed.startsWith('Ext.') ||
-      trimmed.startsWith('Εσω.') || trimmed.startsWith('Εξω.') ||
-      lower.startsWith('int.') || lower.startsWith('ext.') ||
-      lower.startsWith('εσω.') || lower.startsWith('εξω.')) {
+  // Detect scene headings (English and Greek) – use isSceneHeadingStart so lowercase "int."/ "ext." always match
+  if (isSceneHeadingStart(trimmed)) {
     if (line.type !== 'scene-heading') {
       line.type = 'scene-heading'
       // Scene break - update (CONT'D) status for characters below
       updateContdBelow(lineIndex)
       // Reset selected scene to highlight last scene
       store.selectedSceneId = null
+      normalizeGreekSceneHeadingPrefix(lineId, content)
+      return true
     }
-    return
+    normalizeGreekSceneHeadingPrefix(lineId, content)
+    return false
   }
   
   // If type changed to character, update (CONT'D) status
   if (line.type === 'character' && previousType !== 'character') {
     updateContdStatus(lineId, lineIndex)
   }
+  return false
 }
 
 // Handle keyboard events
@@ -497,6 +584,8 @@ const handleKeyDown = (event, line, index) => {
   // Enter key - always split line at cursor position (split line philosophy)
   if (event.key === 'Enter') {
     event.preventDefault()
+    // Do not restore cursor after this keypress; let focus/cursor move to the new line
+    skipNextCursorRestore.value = true
 
     const selection = window.getSelection()
     if (!selection.rangeCount) return
@@ -780,6 +869,61 @@ const moveCursorToEnd = (element) => {
   selection.addRange(range)
 }
 
+// Restore cursor/selection in a contenteditable by character offsets (used after scene-heading conversion / re-render)
+const restoreCursorInElement = (element, startOffset, endOffset) => {
+  if (!element) return
+  const textNode = element.firstChild
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+    moveCursorToEnd(element)
+    return
+  }
+  const len = textNode.length
+  const start = Math.min(startOffset, len)
+  const end = Math.min(endOffset, len)
+  const range = document.createRange()
+  range.setStart(textNode, start)
+  range.setEnd(textNode, end)
+  const sel = window.getSelection()
+  sel.removeAllRanges()
+  sel.addRange(range)
+  element.focus()
+}
+
+// Capture current selection as { index, startOffset, endOffset } if it's inside a line-content in our editor; else null
+const captureCursorPosition = () => {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) return null
+  const range = sel.getRangeAt(0)
+  const lineContent = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer.parentElement
+    : range.startContainer
+  if (!lineContent?.classList?.contains('line-content')) return null
+  const lineContainer = lineContent.closest('[data-line-index]')
+  if (!lineContainer) return null
+  const index = parseInt(lineContainer.getAttribute('data-line-index'), 10)
+  if (isNaN(index)) return null
+  const preRange = range.cloneRange()
+  preRange.selectNodeContents(lineContent)
+  preRange.setEnd(range.startContainer, range.startOffset)
+  const startOffset = preRange.toString().length
+  preRange.setEnd(range.endContainer, range.endOffset)
+  const endOffset = preRange.toString().length
+  return { index, startOffset, endOffset }
+}
+
+// Restore cursor from pendingCursorRestore and clear it (called in nextTick after DOM updates)
+const restorePendingCursor = () => {
+  const pending = pendingCursorRestore.value
+  pendingCursorRestore.value = null
+  if (skipNextCursorRestore.value) {
+    skipNextCursorRestore.value = false
+    return
+  }
+  if (pending && lineRefs.value[pending.index]) {
+    restoreCursorInElement(lineRefs.value[pending.index], pending.startOffset, pending.endOffset)
+  }
+}
+
 const moveCursorToStart = (element) => {
   const range = document.createRange()
   const selection = window.getSelection()
@@ -1016,6 +1160,11 @@ watch(
 
     // If oldLines is null/undefined, this is an initial load or array replacement (episode switch)
     if (!oldLines || newLines !== oldLines) {
+      // Capture cursor before DOM sync so we can restore after (e.g. idle delay re-render)
+      const captured = captureCursorPosition()
+      if (captured) {
+        pendingCursorRestore.value = { index: captured.index, startOffset: captured.startOffset, endOffset: captured.endOffset }
+      }
       // Array reference changed (episode switch) or initial load
       isExternalUpdate.value = true
       nextTick(() => {
@@ -1034,6 +1183,7 @@ watch(
             updateContdStatus(line.id, index)
           }
         })
+        restorePendingCursor()
       })
       return
     }
@@ -1041,6 +1191,11 @@ watch(
     // Check if this is an external update (undo/redo)
     // by comparing if content changed but we didn't trigger it
     if (!isExternalUpdate.value && newLines.length === oldLines.length) {
+      // Capture cursor before DOM sync so we can restore after (e.g. idle delay re-render)
+      const captured = captureCursorPosition()
+      if (captured) {
+        pendingCursorRestore.value = { index: captured.index, startOffset: captured.startOffset, endOffset: captured.endOffset }
+      }
       // Content might have changed from undo/redo
       nextTick(() => {
         newLines.forEach((line, index) => {
@@ -1063,6 +1218,7 @@ watch(
             updateContdStatus(line.id, index)
           }
         })
+        restorePendingCursor()
       })
     }
   },
@@ -1462,9 +1618,9 @@ onUnmounted(() => {
 <style scoped>
 .editor-container {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto; /* vertical and horizontal scroll when viewport is smaller than page */
   background-color: #f0f0f0;
-  padding: 40px 20px;
+  padding: 12px 8px; /* tight so edit page almost fills workspace */
   display: flex;
   justify-content: center;
   position: relative;
@@ -1472,12 +1628,12 @@ onUnmounted(() => {
 }
 
 .editor-container.full-page-view {
-  padding: 20px 10px;
+  padding: 8px 6px;
 }
 
 .editor-wrapper {
-  width: 100%;
-  max-width: 794px; /* A4 width in pixels at 96 DPI */
+  width: 794px; /* A4 width – fixed; do not scale with browser; scroll left/right if narrower */
+  min-width: 794px;
   background: white;
   min-height: 1123px; /* A4 height in pixels at 96 DPI */
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
@@ -1492,8 +1648,10 @@ onUnmounted(() => {
 }
 
 .editor-container.full-page-view .editor-wrapper {
-  /* Keep margins the same, don't scale the wrapper */
-  max-width: 100%;
+  /* Keep fixed width – do not shrink with browser; horizontal scroll if needed */
+  width: 794px;
+  min-width: 794px;
+  zoom: 1.35; /* Uniform scale for full page view only */
 }
 
 .script-editor {
@@ -1511,22 +1669,12 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.045);
 }
 
-.editor-container.full-page-view .script-editor {
-  /* Adjust font size to counter-balance scale, maintaining correct margins and block rules */
-  font-size: 13.8pt; /* 12pt * 1.15 - scales with the view */
-  transform: none; /* Remove scale transform, use font-size instead */
-}
-
 .script-line {
   position: relative;
   display: flex;
-  min-height: 14.4pt;
+  min-height: 14.4pt; /* 12pt * 1.2 */
   margin: 0;
   transition: all 0.3s ease;
-}
-
-.editor-container.full-page-view .script-line {
-  min-height: 16.56pt; /* 14.4pt * 1.15 */
 }
 
 .line-content {
@@ -1534,14 +1682,10 @@ onUnmounted(() => {
   outline: none;
   white-space: pre-wrap;
   word-wrap: break-word;
-  min-height: 14.4pt;
+  min-height: 14.4pt; /* 12pt * 1.2 */
   cursor: text;
   -webkit-user-select: text;
   user-select: text;
-}
-
-.editor-container.full-page-view .line-content {
-  min-height: 16.56pt; /* 14.4pt * 1.15 */
 }
 
 .line-content:empty:before {
@@ -1553,11 +1697,6 @@ onUnmounted(() => {
 .line-scene-heading {
   margin-top: 24pt;
   margin-bottom: 12pt;
-}
-
-.editor-container.full-page-view .line-scene-heading {
-  margin-top: 27.6pt; /* 24pt * 1.15 */
-  margin-bottom: 13.8pt; /* 12pt * 1.15 */
 }
 
 .line-scene-heading:first-child {
@@ -1588,34 +1727,15 @@ onUnmounted(() => {
   transition: all 0.3s ease;
 }
 
-.editor-container.full-page-view .scene-number {
-  font-size: 12.65pt; /* 11pt * 1.15 */
-  left: -69px; /* -60px * 1.15 */
-  width: 57.5px; /* 50px * 1.15 */
-}
-
-.editor-container.full-page-view .line-transition .line-content {
-  max-width: 230px; /* 200px * 1.15 */
-}
-
 /* Action */
 .line-action {
   margin-bottom: 12pt;
-}
-
-.editor-container.full-page-view .line-action {
-  margin-bottom: 13.8pt; /* 12pt * 1.15 */
 }
 
 /* Character */
 .line-character {
   margin-left: 240px;
   margin-top: 12pt;
-}
-
-.editor-container.full-page-view .line-character {
-  margin-left: 276px; /* 240px * 1.15 */
-  margin-top: 13.8pt; /* 12pt * 1.15 */
 }
 
 .line-character .line-content {
@@ -1629,21 +1749,10 @@ onUnmounted(() => {
   margin-bottom: 12pt;
 }
 
-.editor-container.full-page-view .line-dialogue {
-  margin-left: 179.4px; /* 156px * 1.15 */
-  margin-right: 179.4px; /* 156px * 1.15 */
-  margin-bottom: 13.8pt; /* 12pt * 1.15 */
-}
-
 /* Parenthetical */
 .line-parenthetical {
   margin-left: 204px;
   margin-right: 204px;
-}
-
-.editor-container.full-page-view .line-parenthetical {
-  margin-left: 234.6px; /* 204px * 1.15 */
-  margin-right: 234.6px; /* 204px * 1.15 */
 }
 
 .line-parenthetical .line-content {
@@ -1655,11 +1764,6 @@ onUnmounted(() => {
   margin-top: 12pt;
   margin-bottom: 12pt;
   justify-content: flex-end;
-}
-
-.editor-container.full-page-view .line-transition {
-  margin-top: 13.8pt; /* 12pt * 1.15 */
-  margin-bottom: 13.8pt; /* 12pt * 1.15 */
 }
 
 .line-transition .line-content {
@@ -1764,7 +1868,7 @@ onUnmounted(() => {
 
 /* Dark mode */
 :global(body.dark-mode) .editor-wrapper {
-  background: #1e1e1e;
+  background: #353535; /* Light grey so the page stands out */
   color: #e0e0e0;
 }
 

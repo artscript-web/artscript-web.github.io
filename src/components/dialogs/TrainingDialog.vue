@@ -29,7 +29,7 @@
               :class="{ 'has-error': tutorials[currentStep].imageError }"
             >
               <i class="pi pi-image"></i>
-              <span>Add screenshot to <code>public/training/{{ currentStep + 1 }}.png</code></span>
+              <span>Add screenshot to <code>public/Photos_USE/</code></span>
             </div>
           </div>
           <div class="training-slide-body">
@@ -78,6 +78,11 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 
+/** Path to training images in public/Photos_USE – relative so it works on GitHub Pages (e.g. /Wormhole/) and locally */
+function getTrainingImagePath(filename) {
+  return `Photos_USE/${filename}`
+}
+
 const props = defineProps({
   visible: {
     type: Boolean,
@@ -93,49 +98,49 @@ const tutorials = ref([
   {
     title: 'Welcome to ArtScript Web',
     description: 'ArtScript Web is a focused script-writing app for Film, TV Show, and Book formats. Create a new project from the File menu, then start writing. Your work is auto-saved locally.',
-    image: '/Photos_USE/SCR_1b.png',
+    image: getTrainingImagePath('SCR_1b.png'),
     imageError: false,
   },
   {
     title: 'Creating a New Project',
     description: 'Click the File menu (hamburger icon) and choose New → Film, TV Show, or Book. Each format has the right structure: Film uses scenes, TV Show uses seasons and episodes, Book uses chapters.',
-    image: '/Photos_USE/SCR_2b.png',
+    image: getTrainingImagePath('SCR_2b.png'),
     imageError: false,
   },
   {
     title: 'The Script Editor',
-    description: 'Each line has a type: Scene Heading, Action, Character, Dialogue, Transition. Type normally; the app detects line types automatically. Use Ctrl+1 through Ctrl+5 to force a line type, or use the File → Force submenu.',
-    image: '/Photos_USE/SCR_3.png',
+    description: 'Each line has a type: Scene Heading, Action, Character, Dialogue, Transition. Type normally; the app detects line types automatically. Scene headings start with INT., EXT. (English) or ΕΣΩ., ΕΞΩ., έσω., έξω. (Greek). Use Ctrl+1 through Ctrl+5 to force a line type, or use the File → Force submenu.',
+    image: getTrainingImagePath('SCR_3.png'),
     imageError: false,
   },
   {
     title: 'Scenes & Chapters Sidebar',
     description: 'Use the left sidebar to jump between scenes (or chapters in Book format). Click a scene to scroll there. Hover for a preview. Use the grid icon to open the scene showcase and see all scenes at once.',
-    image: '/Photos_USE/SCR_4.png',
+    image: getTrainingImagePath('SCR_4.png'),
     imageError: false,
   },
   {
     title: 'Characters Tab',
     description: 'Switch to the Characters tab in the left sidebar to see all characters in your script. Click a character to add description, notes, and aliases. Use "Find in Script" to jump to their lines.',
-    image: '/Photos_USE/SCR_5.png',
+    image: getTrainingImagePath('SCR_5.png'),
     imageError: false,
   },
   {
     title: 'Title Page & Export',
     description: 'Set your title page via File → Title Page. Preview how the script will look with File → Preview. Export to PDF (File → Export PDF) or Fountain (File → Export Fountain) for sharing or backup.',
-    image: '/Photos_USE/SCR_6.png',
+    image: getTrainingImagePath('SCR_6.png'),
     imageError: false,
   },
   {
     title: 'Spell & Grammar Check',
     description: 'Turn on spell check with the checkmark icon in the toolbar. For full grammar checking, use File → Spell & Grammar. Choose your language and click "Check document" to see suggestions and apply fixes.',
-    image: '/Photos_USE/SCR_7.png',
+    image: getTrainingImagePath('SCR_7.png'),
     imageError: false,
   },
   {
     title: 'More Tools',
     description: 'Use Find (Ctrl+F) and Replace (Ctrl+H) from the File menu. Add notes by selecting text, right-clicking, and choosing "+ Note"—underlined text opens the note. Script Analysis and Replace Character are under File as well.',
-    image: '/Photos_USE/SCR_8.png',
+    image: getTrainingImagePath('SCR_8.png'),
     imageError: false,
   },
 ])

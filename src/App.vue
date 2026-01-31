@@ -22,4 +22,13 @@ body {
   padding: 0;
   overflow: hidden;
 }
+
+/* Title font: Montserrat Light – app title and script name (e.g. "Untitled Script") at top */
+.app-title-inline,
+.project-name-input,
+.launch-menu-title,
+.about-title {
+  font-family: 'Montserrat', sans-serif !important;
+  font-weight: 300 !important;
+}
 </style>
