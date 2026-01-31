@@ -215,6 +215,7 @@ const handleImport = async (e) => {
   align-items: center;
   justify-content: flex-start;
   padding: calc(60px * var(--scale));
+  padding-left: calc(2rem * var(--scale));
   position: relative;
 }
 
@@ -246,7 +247,6 @@ const handleImport = async (e) => {
   position: fixed;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   opacity: 0;
   transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -259,20 +259,30 @@ const handleImport = async (e) => {
   pointer-events: auto;
 }
 
-/* Centered: middle of viewport (clip wrapper is full width) */
+/* Centered: middle of viewport, text centered */
 :deep(.title-wrapper.title-centered) {
   top: 50%;
   left: 50%;
+  align-items: center;
   transform: translate(-50%, -50%) scale(var(--scale));
 }
 
-/* Slid: aligns with left container; clip wrapper (50vw) traps it so it cannot pass */
+:deep(.title-wrapper.title-centered .launch-menu-title) {
+  text-align: center;
+}
+
+/* Slid: aligns with left container, text left; clip wrapper traps it */
 :deep(.title-wrapper.title-left) {
   top: 50%;
+  align-items: flex-start;
   /* Match left container: centered 90%/1200px, left half + padding */
-  left: calc((100vw - min(90vw, 1200px)) / 2 + 60px * var(--scale));
+  left: calc((100vw - min(90vw, 1200px)) / 2 + 2rem * var(--scale));
   transform: translateY(-50%) scale(var(--scale));
   transform-origin: left center;
+}
+
+:deep(.title-wrapper.title-left .launch-menu-title) {
+  text-align: left;
 }
 
 /* Scale the title text */
