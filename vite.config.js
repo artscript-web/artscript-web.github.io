@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
-  base: '/', // Χρησιμοποιούμε σχετική διαδρομή για να βρίσκει τα assets παντού
+  base: '/', 
   plugins: [vue()],
   resolve: {
     alias: {
@@ -13,4 +13,4 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 2000,
   }
-}) 
+})
