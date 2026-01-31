@@ -1,10 +1,10 @@
 <template>
-  <div class="launch-menu-overlay">
-    <!-- Title - Independent, appears first -->
-    <div 
+  <div class="launch-menu-overlay" :style="{ '--scale': scale }">
+    <!-- Title: independent and centered initially; moves into left container when slide starts -->
+    <div
       class="title-wrapper"
-      :class="{ 
-        'title-centered': !titleSlid, 
+      :class="{
+        'title-centered': !titleSlid,
         'title-left': titleSlid,
         'title-visible': titleVisible
       }"
@@ -13,7 +13,7 @@
         <span class="typed-text">{{ displayedText }}</span>
         <span class="cursor-marker"></span>
       </h1>
-      <p 
+      <p
         class="title-credit"
         :class="{ 'visible': showCredit }"
       >
@@ -21,10 +21,10 @@
       </p>
     </div>
 
-    <!-- Containers - Revealed after title slides -->
+    <!-- Containers: visible when title appears; left container clips title once it slides in -->
     <div class="launch-menu-container" :class="{ 'visible': containersVisible }">
-      <!-- Left Container: Title placeholder -->
-      <div class="launch-menu-left">
+      <!-- Left Container: overflow hidden when title slides in -->
+      <div class="launch-menu-left" :class="{ 'clip-title': titleSlid }">
       </div>
 
       <!-- Right Container: Actions -->
@@ -84,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 
@@ -101,13 +101,34 @@ const titleSlid = ref(false)
 const containersVisible = ref(false)
 const showCredit = ref(false)
 
+// Unified scaling: base design is 1440x900, scale proportionally
+const BASE_WIDTH = 1440
+const BASE_HEIGHT = 900
+const scale = ref(1)
+
+const updateScale = () => {
+  const scaleX = window.innerWidth / BASE_WIDTH
+  const scaleY = window.innerHeight / BASE_HEIGHT
+  // Use the smaller scale to ensure everything fits
+  scale.value = Math.min(scaleX, scaleY, 1.2) // Cap at 1.2 to avoid giant sizes
+}
+
 onMounted(() => {
   recentProjects.value = store.loadRecentProjects()
+  
+  // Set initial scale
+  updateScale()
+  window.addEventListener('resize', updateScale)
+  
   // Show title first
   setTimeout(() => {
     titleVisible.value = true
     startTypingAnimation()
   }, 100)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateScale)
 })
 
 const startTypingAnimation = () => {
@@ -123,15 +144,13 @@ const startTypingAnimation = () => {
         isTyping.value = false
         // Wait for cursor to fade, then slide title to left
         setTimeout(() => {
+          // Reveal containers when slide starts
+          containersVisible.value = true
           titleSlid.value = true
-          // After title slides, reveal containers first
+          // After title slides, reveal credit text
           setTimeout(() => {
-            containersVisible.value = true
-            // Last, reveal credit text
-            setTimeout(() => {
-              showCredit.value = true
-            }, 600)
-          }, 1200)
+            showCredit.value = true
+          }, 600)
         }, 400)
       }, 800)
     }
@@ -177,3 +196,127 @@ const handleImport = async (e) => {
   }
 }
 </script>
+
+<style scoped>
+/* Unified scaling using CSS custom property */
+:deep(.launch-menu-overlay) {
+  --scale: 1;
+}
+
+/* Left container: overflow hidden when title slides in to keep it bounded */
+:deep(.launch-menu-left) {
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: calc(60px * var(--scale));
+  position: relative;
+}
+
+:deep(.launch-menu-left.clip-title) {
+  overflow: hidden;
+}
+
+/* Title: starts fixed and centered on viewport, then slides into left container */
+:deep(.title-wrapper) {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  opacity: 0;
+  transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+}
+
+:deep(.title-wrapper.title-visible) {
+  opacity: 1;
+}
+
+/* Centered: middle of viewport */
+:deep(.title-wrapper.title-centered) {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(var(--scale));
+}
+
+/* Slid: moves into left container position and stays clipped there */
+:deep(.title-wrapper.title-left) {
+  top: 50%;
+  left: calc(5% + 60px * var(--scale));
+  transform: translateY(-50%) scale(var(--scale));
+  transform-origin: left center;
+}
+
+/* Scale the title text */
+:deep(.launch-menu-title) {
+  font-size: calc(64px * var(--scale));
+}
+
+:deep(.title-credit) {
+  font-size: calc(14px * var(--scale));
+  margin-top: calc(12px * var(--scale));
+}
+
+/* Scale the container content */
+:deep(.launch-menu-container) {
+  --scale: inherit;
+}
+
+:deep(.launch-menu-right) {
+  padding: calc(60px * var(--scale));
+}
+
+:deep(.launch-menu-section) {
+  margin-bottom: calc(40px * var(--scale));
+}
+
+:deep(.launch-menu-section h2) {
+  font-size: calc(16px * var(--scale));
+  margin-bottom: calc(20px * var(--scale));
+}
+
+:deep(.launch-menu-formats) {
+  gap: calc(20px * var(--scale));
+}
+
+:deep(.launch-format-btn) {
+  padding: calc(20px * var(--scale)) calc(16px * var(--scale));
+  gap: calc(8px * var(--scale));
+  border-radius: calc(4px * var(--scale));
+}
+
+:deep(.format-icon) {
+  font-size: calc(20px * var(--scale));
+}
+
+:deep(.format-name) {
+  font-size: calc(18px * var(--scale));
+}
+
+:deep(.coming-soon) {
+  font-size: calc(11px * var(--scale));
+}
+
+:deep(.open-file-btn) {
+  padding: calc(14px * var(--scale)) calc(20px * var(--scale));
+  font-size: calc(14px * var(--scale));
+  gap: calc(8px * var(--scale));
+  border-radius: calc(4px * var(--scale));
+}
+
+:deep(.recent-project-item) {
+  padding: calc(14px * var(--scale)) calc(16px * var(--scale));
+  margin-bottom: calc(8px * var(--scale));
+  font-size: calc(14px * var(--scale));
+  border-radius: calc(4px * var(--scale));
+}
+
+:deep(.no-recent-projects) {
+  font-size: calc(14px * var(--scale));
+  padding: calc(20px * var(--scale));
+}
+
+:deep(.recent-projects-list) {
+  max-height: calc(180px * var(--scale));
+}
+</style>
