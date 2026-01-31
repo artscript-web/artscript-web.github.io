@@ -1,14 +1,18 @@
 <template>
   <div class="launch-menu-overlay" :style="{ '--scale': scale }">
-    <!-- Title: independent and centered initially; moves into left container when slide starts -->
+    <!-- Title: independent and centered initially; when slid, trapped inside left half via clip wrapper -->
     <div
-      class="title-wrapper"
-      :class="{
-        'title-centered': !titleSlid,
-        'title-left': titleSlid,
-        'title-visible': titleVisible
-      }"
+      class="title-clip-wrapper"
+      :class="{ 'title-slid': titleSlid }"
     >
+      <div
+        class="title-wrapper"
+        :class="{
+          'title-centered': !titleSlid,
+          'title-left': titleSlid,
+          'title-visible': titleVisible
+        }"
+      >
       <h1 class="launch-menu-title">
         <span class="typed-text">{{ displayedText }}</span>
         <span class="cursor-marker"></span>
@@ -19,9 +23,10 @@
       >
         Created by Nick Christod
       </p>
+      </div>
     </div>
 
-    <!-- Containers: visible when title appears; left container clips title once it slides in -->
+    <!-- Containers: reveal when title starts sliding; left container aligns with clip zone -->
     <div class="launch-menu-container" :class="{ 'visible': containersVisible }">
       <!-- Left Container: overflow hidden when title slides in -->
       <div class="launch-menu-left" :class="{ 'clip-title': titleSlid }">
@@ -217,7 +222,26 @@ const handleImport = async (e) => {
   overflow: hidden;
 }
 
-/* Title: starts fixed and centered on viewport, then slides into left container */
+/* Clip wrapper: full viewport when centered; left half (50vw) when slid to trap title */
+:deep(.title-clip-wrapper) {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+  transform: translateZ(0);
+  z-index: 100;
+  pointer-events: none;
+  transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.title-clip-wrapper.title-slid) {
+  width: 50vw;
+  overflow: hidden;
+}
+
+/* Title: positioned inside clip wrapper; centered initially, left when slid */
 :deep(.title-wrapper) {
   position: fixed;
   display: flex;
@@ -225,24 +249,28 @@ const handleImport = async (e) => {
   align-items: flex-start;
   opacity: 0;
   transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
 }
 
 :deep(.title-wrapper.title-visible) {
   opacity: 1;
 }
 
-/* Centered: middle of viewport */
+:deep(.title-wrapper) {
+  pointer-events: auto;
+}
+
+/* Centered: middle of viewport (clip wrapper is full width) */
 :deep(.title-wrapper.title-centered) {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) scale(var(--scale));
 }
 
-/* Slid: moves into left container position and stays clipped there */
+/* Slid: aligns with left container; clip wrapper (50vw) traps it so it cannot pass */
 :deep(.title-wrapper.title-left) {
   top: 50%;
-  left: calc(5% + 60px * var(--scale));
+  /* Match left container: centered 90%/1200px, left half + padding */
+  left: calc((100vw - min(90vw, 1200px)) / 2 + 60px * var(--scale));
   transform: translateY(-50%) scale(var(--scale));
   transform-origin: left center;
 }
