@@ -18,4 +18,14 @@ const router = createRouter({
   ],
 })
 
+// Send Google Analytics page_view on each SPA navigation
+router.afterEach((to) => {
+  if (typeof window !== 'undefined' && window.gtag) {
+    window.gtag('config', 'G-ZNXGFSKT9Y', {
+      page_path: to.fullPath,
+      page_title: to.name === 'home' ? 'Home' : to.name === 'workspace' ? 'Editor' : document.title,
+    })
+  }
+})
+
 export default router
