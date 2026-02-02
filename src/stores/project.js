@@ -583,28 +583,74 @@ export const useProjectStore = defineStore('project', {
     },
 
     // File I/O
+    // Get Fountain text content from a project (for recent projects storage)
+    getProjectFountainContent(project) {
+      if (!project) return ''
+      let fountain = ''
+      const tp = project.titlePage || {}
+      if (tp.title) fountain += `Title: ${tp.title}\n`
+      if (tp.author) fountain += `Author: ${tp.author}\n`
+      if (tp.draft) fountain += `Draft: ${tp.draft}\n`
+      if (tp.contact) fountain += `Contact: ${tp.contact}\n`
+      fountain += '\n'
+      ;(project.lines || []).forEach((line) => {
+        switch (line.type) {
+          case 'scene-heading':
+            fountain += `${line.content}\n\n`
+            break
+          case 'action':
+            fountain += `${line.content}\n\n`
+            break
+          case 'character':
+            fountain += `${line.content}\n`
+            break
+          case 'dialogue':
+            fountain += `${line.content}\n\n`
+            break
+          case 'parenthetical':
+            fountain += `(${line.content})\n`
+            break
+          case 'transition':
+            fountain += `> ${line.content}\n\n`
+            break
+          default:
+            fountain += `${line.content}\n\n`
+        }
+      })
+      return fountain
+    },
+
     saveToRecentProjects(projectId) {
       const project = this.projects.find((p) => p.id === projectId)
       if (!project) return
 
+      const content = this.getProjectFountainContent(project)
+      const entry = {
+        name: project.name,
+        content,
+        date: Date.now(),
+      }
+
       const saved = localStorage.getItem('recentProjects')
       let recent = saved ? JSON.parse(saved) : []
 
-      recent = recent.filter((p) => p.id !== projectId)
+      // Remove older entries with same name; keep only entries with content (new format)
+      recent = recent.filter((p) => p.content && p.name !== project.name)
 
-      recent.unshift({
-        id: projectId,
-        name: project.name,
-        format: project.format,
-        lastAccessed: Date.now(),
-      })
-
-      localStorage.setItem('recentProjects', JSON.stringify(recent.slice(0, 10)))
+      recent.unshift(entry)
+      localStorage.setItem('recentProjects', JSON.stringify(recent.slice(0, 3)))
     },
 
     loadRecentProjects() {
       const saved = localStorage.getItem('recentProjects')
-      return saved ? JSON.parse(saved) : []
+      const raw = saved ? JSON.parse(saved) : []
+      return raw.filter((p) => p.content && p.name)
+    },
+
+    loadRecentProject(entry) {
+      if (!entry || !entry.content || !entry.name) return null
+      const fileName = (entry.name || 'Untitled').replace(/\s+/g, '_') + '.fountain'
+      return this.importProjectFromFountain(entry.content, fileName)
     },
 
     exportProjectAsJSON() {

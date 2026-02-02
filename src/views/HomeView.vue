@@ -84,12 +84,12 @@
           <h2>Recent Projects</h2>
           <div class="recent-projects-list">
             <div
-              v-for="proj in recentProjects"
-              :key="proj.id"
+              v-for="(proj, idx) in recentProjects"
+              :key="proj.date || idx"
               class="recent-project-item"
-              @click="openRecent(proj.id)"
+              @click="openRecent(proj)"
             >
-              {{ proj.name }} ({{ proj.format }})
+              {{ proj.name }}
             </div>
 
             <p v-if="recentProjects.length === 0" class="no-recent-projects">
@@ -189,17 +189,11 @@ const start = (format) => {
   router.push(`/project/${id}`)
 }
 
-const openRecent = (id) => {
-  // In a real app with backend, we would fetch the project data.
-  // Since this is memory-based, we check if it's already in the store.
-  const exists = store.projects.find((p) => p.id === id)
-  if (exists) {
-    store.activeProjectId = id
+const openRecent = (entry) => {
+  const id = store.loadRecentProject(entry)
+  if (id) {
+    store.saveToRecentProjects(id)
     router.push(`/project/${id}`)
-  } else {
-    alert(
-      "Project data not in memory (Persistence requires Backend/File API). Please use 'Open From File'.",
-    )
   }
 }
 
