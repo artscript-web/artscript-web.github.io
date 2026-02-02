@@ -228,10 +228,10 @@ import ShortcutsDialog from '@/components/dialogs/ShortcutsDialog.vue'
 
 const store = useProjectStore()
 const editorRef = ref(null)
-const isMobile = ref(typeof window !== 'undefined' && window.innerWidth < 768)
+const isMobile = ref(typeof window !== 'undefined' && window.innerWidth <= 1024)
 
 const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768
+  isMobile.value = window.innerWidth <= 1024
 }
 
 const closeMobileSidebars = () => {

@@ -5,9 +5,17 @@
       <div
         class="script-editor"
         :class="{ 'book-format': isBookFormat }"
+        contenteditable="true"
+        ref="editorRootRef"
         @click="handleEditorClick"
+        @input="handleEditorInput"
+        @keydown="handleEditorKeyDown"
+        @paste="handlePaste"
+        @focusin="handleEditorFocusIn"
+        :spellcheck="store.spellCheckEnabled"
+        :lang="store.spellGrammarLanguage ? store.spellGrammarLanguage.split('-')[0] : 'en'"
       >
-        <!-- Render each line as a separate contenteditable -->
+        <!-- Single contenteditable: all lines in one region for cross-line selection -->
         <div v-for="(line, index) in lines" :key="line.id" :data-line-index="index">
           <!-- Page break indicator -->
           <div v-if="pageBreaks.has(index) && index > 0" class="page-break-indicator">
@@ -21,17 +29,10 @@
             <div
               :ref="(el) => setLineRef(el, index)"
               class="line-content"
-              contenteditable="true"
-              @input="handleLineInput($event, line.id, index)"
-              @keydown="handleKeyDown($event, line, index)"
-              @paste="handlePaste"
-              @focus="currentLineIndex = index"
               @mousedown="handleMouseDown($event, index)"
               @mouseup="handleMouseUp($event, index)"
               @mouseleave="handleMouseLeave($event, index)"
               @contextmenu="handleContextMenu($event, line.id)"
-              :spellcheck="store.spellCheckEnabled"
-              :lang="store.spellGrammarLanguage ? store.spellGrammarLanguage.split('-')[0] : 'en'"
             ></div>
           </div>
         </div>
@@ -144,6 +145,7 @@ const props = defineProps({
 
 const store = useProjectStore()
 const containerRef = ref(null)
+const editorRootRef = ref(null)
 const lineRefs = ref([])
 const currentLineIndex = ref(0)
 const ignoreNextUpdate = ref(false)
@@ -151,6 +153,7 @@ const pageBreaks = ref(new Set()) // Track which lines start new pages
 const isExternalUpdate = ref(false) // Track if update is from undo/redo
 const isSelecting = ref(false) // Track if user is selecting across lines
 const selectionStart = ref({ lineIndex: null, offset: null }) // Track selection start
+const inputDrivenUpdate = ref(false) // Prevent setLineRef overwrite when syncing from input
 
 // Global cursor position tracker: restored after any re-render/DOM overwrite (e.g. setLineRef, watchers)
 const pendingCursorRestore = ref(null) // { index, startOffset, endOffset } or null
@@ -199,23 +202,17 @@ const setLineRef = (el, index) => {
   
   // Always initialize content when ref is set (important for Book format)
   if (line) {
-    // Set content immediately - ensure it's always set, even if empty
     const content = line.content || ''
-    if (el.innerText !== content) {
-      // Before overwriting DOM, capture cursor if selection is in this line (so we can restore after re-render)
+    const currentText = (el.innerText || el.textContent || '').replace(/\u200B/g, '')
+    const shouldSync = isExternalUpdate.value || !currentText || (currentText !== content && !inputDrivenUpdate.value)
+    if (shouldSync && currentText !== content) {
       const captured = captureCursorPosition()
       if (captured && captured.index === index) {
         pendingCursorRestore.value = { index: captured.index, startOffset: captured.startOffset, endOffset: captured.endOffset }
       }
-      el.innerText = content
+      el.innerText = content || (el.childNodes.length ? '' : '\u200B')
       nextTick(restorePendingCursor)
     }
-    
-    // Ensure the element is focusable and editable
-    el.setAttribute('contenteditable', 'true')
-    el.setAttribute('tabindex', '0')
-    
-    // If empty, add a zero-width space to make it focusable
     if (!content && !el.firstChild) {
       el.appendChild(document.createTextNode('\u200B'))
     }
@@ -295,23 +292,44 @@ const calculatePageBreaks = () => {
   })
 }
 
-// Handle line content change
-const handleLineInput = (event, lineId, index) => {
-  let newContent = event.target.innerText
-  // Strip zero-width space (used for focusable empty lines) so "int." on first line is detected as scene heading
-  newContent = newContent.replace(/\u200B/g, '')
+// Single contenteditable: sync DOM to store on input (walk all lines)
+const handleEditorInput = () => {
+  inputDrivenUpdate.value = true
+  nextTick(() => { inputDrivenUpdate.value = false })
 
-  // Prevent reactivity loop
-  isExternalUpdate.value = false
+  const root = editorRootRef.value
+  if (!root) return
 
-  // Save cursor position before any state update (so we can restore after scene-heading conversion)
+  const lineDivs = root.querySelectorAll('.script-line')
+  lineDivs.forEach((scriptLine) => {
+    const contentEl = scriptLine.querySelector('.line-content')
+    const lineId = scriptLine.getAttribute('data-line-id')
+    const idxAttr = scriptLine.closest('[data-line-index]')?.getAttribute('data-line-index')
+    const index = idxAttr != null ? parseInt(idxAttr, 10) : lines.value.findIndex((l) => l.id === lineId)
+    if (!contentEl || !lineId || index < 0) return
+
+    const line = lines.value.find((l) => l.id === lineId)
+    if (!line) return
+
+    const newContent = (contentEl.innerText || contentEl.textContent || '').replace(/\u200B/g, '')
+    if (newContent === line.content) return
+
+    handleLineContentUpdate(lineId, index, newContent, contentEl)
+  })
+}
+
+// Shared logic for line content updates (from editor input)
+const handleLineContentUpdate = (lineId, index, newContent, targetElement) => {
+  const line = lines.value.find((l) => l.id === lineId)
+  if (!line) return
+
   let savedCursor = null
   const sel = window.getSelection()
-  if (sel && sel.rangeCount) {
+  if (sel && sel.rangeCount && targetElement) {
     const range = sel.getRangeAt(0)
-    if (event.target.contains(range.startContainer)) {
+    if (targetElement.contains(range.startContainer)) {
       const preRange = range.cloneRange()
-      preRange.selectNodeContents(event.target)
+      preRange.selectNodeContents(targetElement)
       preRange.setEnd(range.startContainer, range.startOffset)
       const startOffset = preRange.toString().length
       preRange.setEnd(range.endContainer, range.endOffset)
@@ -320,64 +338,51 @@ const handleLineInput = (event, lineId, index) => {
     }
   }
 
-  // Update store
-  const line = lines.value.find((l) => l.id === lineId)
-  if (line) {
-    const previousContent = line.content
-    const previousType = line.type
-    
-    // Directly update without triggering watcher
-    line.content = newContent
+  const previousContent = line.content
+  const previousType = line.type
+  line.content = newContent
 
-    // Auto-detect type changes (returns true if converted to scene-heading)
-    const convertedToSceneHeading = autoDetectType(lineId, newContent)
-    
-    // If this is a character line, update (CONT'D) status
-    if (line.type === 'character') {
-      updateContdStatus(lineId, index)
-      // Update DOM with potentially modified content
-      const updatedContent = line.content
-      if (updatedContent !== newContent && event.target.innerText !== updatedContent) {
-        event.target.innerText = updatedContent
-        // Restore cursor position
-        nextTick(() => {
-          const selection = window.getSelection()
-          if (selection.rangeCount) {
-            const range = selection.getRangeAt(0)
-            const textNode = event.target.firstChild
-            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-              const cursorPos = Math.min(range.startOffset, updatedContent.length)
-              range.setStart(textNode, cursorPos)
-              range.collapse(true)
-              selection.removeAllRanges()
-              selection.addRange(range)
-            }
-          }
-        })
-      }
-      // If character name changed, update lines below
-      if (previousContent !== newContent || previousType !== line.type) {
-        updateContdBelow(index)
-      }
-    }
+  const convertedToSceneHeading = autoDetectType(lineId, newContent)
 
-    // Restore cursor after scene-heading conversion (DOM updates in nextTick)
-    if (convertedToSceneHeading && savedCursor) {
+  if (line.type === 'character') {
+    updateContdStatus(lineId, index)
+    const updatedContent = line.content
+    if (updatedContent !== newContent && targetElement && targetElement.innerText !== updatedContent) {
+      targetElement.innerText = updatedContent
       nextTick(() => {
-        if (skipNextCursorRestore.value) {
-          skipNextCursorRestore.value = false
-          return
-        }
-        const el = lineRefs.value[savedCursor.index]
-        if (el) {
-          restoreCursorInElement(el, savedCursor.startOffset, savedCursor.endOffset)
+        const selection = window.getSelection()
+        if (selection.rangeCount) {
+          const range = selection.getRangeAt(0)
+          const textNode = targetElement.firstChild
+          if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+            const cursorPos = Math.min(range.startOffset, updatedContent.length)
+            range.setStart(textNode, cursorPos)
+            range.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          }
         }
       })
     }
-
-    // Recalculate page breaks (debounced)
-    debouncePageBreaks()
+    if (previousContent !== newContent || previousType !== line.type) {
+      updateContdBelow(index)
+    }
   }
+
+  if (convertedToSceneHeading && savedCursor) {
+    nextTick(() => {
+      if (skipNextCursorRestore.value) {
+        skipNextCursorRestore.value = false
+        return
+      }
+      const el = lineRefs.value[savedCursor.index]
+      if (el) {
+        restoreCursorInElement(el, savedCursor.startOffset, savedCursor.endOffset)
+      }
+    })
+  }
+
+  debouncePageBreaks()
 }
 
 // Debounced page break calculation
@@ -590,8 +595,43 @@ const autoDetectType = (lineId, content) => {
   return false
 }
 
+// Get current line index from selection (for single contenteditable)
+const getCurrentLineFromSelection = () => {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) return null
+  const range = sel.getRangeAt(0)
+  let node = range.startContainer
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentElement
+  const scriptLine = node?.closest?.('.script-line')
+  if (!scriptLine) return null
+  const idx = parseInt(scriptLine.getAttribute('data-line-index'), 10)
+  if (isNaN(idx)) return null
+  const line = lines.value[idx]
+  return line ? { line, index: idx } : null
+}
+
+// Single contenteditable: delegate keydown to line handler
+const handleEditorKeyDown = (event) => {
+  const curr = getCurrentLineFromSelection()
+  if (curr) {
+    currentLineIndex.value = curr.index
+    handleKeyDown(event, curr.line, curr.index)
+  } else {
+    handleKeyDown(event, lines.value[0], 0)
+  }
+}
+
+// Single contenteditable: update currentLineIndex on focus
+const handleEditorFocusIn = () => {
+  const curr = getCurrentLineFromSelection()
+  if (curr) currentLineIndex.value = curr.index
+}
+
 // Handle keyboard events
 const handleKeyDown = (event, line, index) => {
+  // With single contenteditable, event.target is the root; use line ref for the current line
+  const currentElement = lineRefs.value[index] ?? event.target
+
   // Check for force shortcuts first (CTRL+1-5)
   if (event.ctrlKey && !event.metaKey && ['1', '2', '3', '4', '5'].includes(event.key)) {
     event.preventDefault()
@@ -620,7 +660,6 @@ const handleKeyDown = (event, line, index) => {
     if (!selection.rangeCount) return
 
     const range = selection.getRangeAt(0)
-    const currentElement = event.target
     const currentText = currentElement.innerText || currentElement.textContent || ''
     
     // Get accurate cursor position in contenteditable
@@ -726,7 +765,6 @@ const handleKeyDown = (event, line, index) => {
     if (!selection.rangeCount) return
     
     const range = selection.getRangeAt(0)
-    const currentElement = event.target
     const currentText = currentElement.innerText || currentElement.textContent || ''
     
     // Get accurate cursor position
@@ -764,9 +802,14 @@ const handleKeyDown = (event, line, index) => {
   // Arrow keys - navigate between lines
   else if (event.key === 'ArrowUp' && index > 0) {
     const selection = window.getSelection()
+    if (!selection.rangeCount) return
     const range = selection.getRangeAt(0)
+    const preRange = range.cloneRange()
+    preRange.selectNodeContents(currentElement)
+    preRange.setEnd(range.startContainer, range.startOffset)
+    const cursorPosition = preRange.toString().length
 
-    if (range.startOffset === 0) {
+    if (cursorPosition === 0) {
       event.preventDefault()
       const prevElement = lineRefs.value[index - 1]
       if (prevElement) {
@@ -776,10 +819,15 @@ const handleKeyDown = (event, line, index) => {
     }
   } else if (event.key === 'ArrowDown' && index < lines.value.length - 1) {
     const selection = window.getSelection()
+    if (!selection.rangeCount) return
     const range = selection.getRangeAt(0)
-    const content = event.target.innerText
+    const content = currentElement.innerText || currentElement.textContent || ''
+    const preRange = range.cloneRange()
+    preRange.selectNodeContents(currentElement)
+    preRange.setEnd(range.startContainer, range.startOffset)
+    const cursorPosition = preRange.toString().length
 
-    if (range.startOffset === content.length) {
+    if (cursorPosition >= content.length) {
       event.preventDefault()
       const nextElement = lineRefs.value[index + 1]
       if (nextElement) {
@@ -1754,6 +1802,8 @@ onUnmounted(() => {
   min-height: 100%;
   cursor: text;
   transition: all 0.3s ease;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .editor-container.full-page-view .editor-wrapper {

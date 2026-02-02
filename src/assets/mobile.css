@@ -14,10 +14,11 @@
   to { opacity: 1; }
 }
 
-@media (max-width: 768px) {
-  /* Main container: 100dvh for visible screen (keyboard-aware) */
+/* Compact layout: mobile + tablet (single column, popup sidebars, mobile toolbar) */
+@media (max-width: 1024px) {
+  /* Main container */
   .app-container {
-    height: 100dvh !important;
+    min-height: 100vh;
   }
 
   /* Editor area: only text scrolls */
@@ -165,7 +166,7 @@
   }
 
   .script-editor {
-    font-size: 16px !important; /* 16px+ prevents iOS auto-zoom on focus */
+    font-size: 16px !important; /* phone; tablet overrides to ~14px */
     line-height: 1.4;
   }
 
@@ -322,4 +323,138 @@
   }
 
   /* Home/Welcome page mobile layout is in HomeView.vue */
+}
+
+/* Phone-only overrides (≤768px): keyboard-aware height, anti-zoom font */
+@media (max-width: 768px) {
+  .app-container {
+    height: 100dvh !important;
+  }
+
+  .script-editor {
+    font-size: 16px !important; /* 16px+ prevents iOS auto-zoom on focus */
+  }
+
+  .toolbar-center .project-name-input {
+    font-size: 16px !important;
+  }
+
+  /* HomeView: small horizontal inset so container doesn’t touch edges */
+  .launch-menu-container {
+    margin-left: 12px !important;
+    margin-right: 12px !important;
+    width: calc(100% - 24px) !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* Tablet: 769px–1024px – mobile layout with smaller proportions, editor padding 10% */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Fonts ~10–15% smaller than mobile (16px → ~14px) */
+  .script-editor {
+    font-size: 14px !important;
+    line-height: 1.35;
+  }
+
+  .script-line,
+  .line-content {
+    min-height: 1.35em !important;
+  }
+
+  .toolbar-center .project-name-input {
+    font-size: 14px !important;
+  }
+
+  .scene-number {
+    font-size: 9pt !important;
+  }
+
+  /* Editor: more horizontal padding so lines don’t stretch on wide tablet */
+  .editor-wrapper {
+    padding: 20px 10% 24px 10% !important;
+  }
+
+  .editor-container {
+    padding: 8px 0 !important;
+  }
+
+  /* Slightly smaller toolbar and icons */
+  .toolbar {
+    padding: 8px 10px !important;
+  }
+
+  .toolbar .icon-btn {
+    min-width: 40px !important;
+    min-height: 40px !important;
+    padding: 8px !important;
+  }
+
+  .dropdown-btn {
+    min-width: 40px !important;
+    min-height: 40px !important;
+    padding: 8px !important;
+  }
+
+  .dropdown-item {
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+  }
+
+  /* Mobile toolbar (force elements): slightly smaller, still sticky above keyboard */
+  .mobile-toolbar .force-btn {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    min-width: 90px !important;
+  }
+
+  .mobile-toolbar .force-btn-square {
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 36px !important;
+    font-size: 9px !important;
+  }
+
+  /* Scenes popup: slightly smaller on tablet */
+  .scenes-popup {
+    max-width: min(380px, 85vw) !important;
+  }
+
+  .scenes-popup-title {
+    font-size: 16px !important;
+  }
+
+  /* HomeView: slightly smaller title and buttons */
+  .launch-format-btn,
+  .open-file-btn {
+    padding: 10px 16px !important;
+    font-size: 14px !important;
+  }
+
+  /* HomeView: full-width – no side gaps, white background covers viewport */
+  .launch-menu-overlay {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .launch-menu-container {
+    max-width: none !important;
+    width: calc(100% - 60px) !important; /* 30px inset from left and right */
+    box-sizing: border-box !important;
+    min-height: calc(100vh - 32px) !important;
+    margin: 16px 30px !important;
+    padding: 28px 24px 32px !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
+    border-radius: 16px !important;
+    box-sizing: border-box !important;
+  }
+
+  :global(body.dark-mode) .launch-menu-container {
+    background: rgba(42, 42, 42, 0.95) !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4) !important;
+  }
 }

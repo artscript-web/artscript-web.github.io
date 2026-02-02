@@ -117,7 +117,7 @@ const displayedText = ref('')
 const isTyping = ref(true)
 const titleVisible = ref(false)
 const titleSlid = ref(false)
-const isMobile = ref(typeof window !== 'undefined' && window.innerWidth <= 768)
+const isMobile = ref(typeof window !== 'undefined' && window.innerWidth <= 1024)
 const containersVisible = ref(false)
 const showCredit = ref(false)
 
@@ -134,14 +134,14 @@ const updateScale = () => {
 
 const handleResize = () => {
   updateScale()
-  const mobile = window.innerWidth <= 768
+  const mobile = window.innerWidth <= 1024
   isMobile.value = mobile
   if (mobile) containersVisible.value = true
 }
 
 onMounted(() => {
   recentProjects.value = store.loadRecentProjects()
-  isMobile.value = window.innerWidth <= 768
+  isMobile.value = window.innerWidth <= 1024
   if (isMobile.value) containersVisible.value = true
 
   updateScale()
@@ -378,8 +378,8 @@ const handleImport = async (e) => {
   display: none;
 }
 
-/* Mobile: title inside container */
-@media (max-width: 768px) {
+/* Mobile + Tablet: single-column layout, title inside container */
+@media (max-width: 1024px) {
   :deep(.launch-menu-overlay) {
     display: flex;
     flex-direction: column;
@@ -388,12 +388,10 @@ const handleImport = async (e) => {
     padding: 24px;
   }
 
-  /* Hide floating title on mobile */
   :deep(.title-clip-wrapper) {
     display: none !important;
   }
 
-  /* Title inside container: centered with space at top */
   :deep(.mobile-title-in-container) {
     display: flex !important;
     flex-direction: column;
@@ -413,33 +411,26 @@ const handleImport = async (e) => {
   :deep(.mobile-title-in-container .launch-menu-title) {
     text-align: center !important;
     white-space: nowrap;
-    font-size: 44px !important;
+    font-size: 52px !important; /* tablet; phone overrides to 44px */
   }
 
-  /* Blinking cursor on mobile */
   :deep(.mobile-title-in-container .cursor-marker) {
-    height: 34px !important;
+    height: 30px !important;
     width: 2px !important;
   }
 
   :deep(.mobile-title-in-container .title-credit) {
     text-align: center !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     align-self: center;
     margin-left: auto;
     margin-right: auto;
   }
 
-  @media (max-width: 380px) {
-    :deep(.mobile-title-in-container .launch-menu-title) {
-      font-size: 35px !important;
-    }
-  }
-
   :deep(.launch-menu-container) {
     flex-direction: column !important;
     width: 100% !important;
-    max-width: 420px !important;
+    max-width: none !important; /* tablet full-width; phone overrides to 420px below */
     align-items: center !important;
   }
 
@@ -459,14 +450,13 @@ const handleImport = async (e) => {
     display: none !important;
   }
 
-  /* Rest 40% smaller (60% of prior) */
   :deep(.launch-menu-section) {
     margin-bottom: 14px !important;
     width: 100%;
   }
 
   :deep(.launch-menu-section h2) {
-    font-size: 17px !important;
+    font-size: 16px !important;
     margin-bottom: 14px !important;
     text-align: center !important;
   }
@@ -477,35 +467,92 @@ const handleImport = async (e) => {
   }
 
   :deep(.launch-format-btn) {
-    padding: 12px 14px !important;
-    min-height: 37px !important;
+    padding: 10px 14px !important;
+    min-height: 34px !important;
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
     border-radius: 10px !important;
   }
 
   :deep(.format-icon) {
-    font-size: 25px !important;
+    font-size: 22px !important;
   }
 
   :deep(.format-name) {
-    font-size: 23px !important;
+    font-size: 20px !important;
   }
 
   :deep(.coming-soon) {
-    font-size: 14px !important;
+    font-size: 13px !important;
   }
 
   :deep(.open-file-btn) {
-    padding: 12px 14px !important;
-    min-height: 37px !important;
-    font-size: 23px !important;
+    padding: 10px 14px !important;
+    min-height: 34px !important;
+    font-size: 20px !important;
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
     border-radius: 10px !important;
-    margin-top: 18px !important;
+    margin-top: 16px !important;
   }
 
   :deep(.open-file-btn .pi) {
-    font-size: 25px !important;
+    font-size: 22px !important;
+  }
+
+  /* Phone-only: narrow centered container, larger touch targets and title */
+  @media (max-width: 768px) {
+    :deep(.launch-menu-container) {
+      max-width: 420px !important;
+    }
+
+    :deep(.mobile-title-in-container .launch-menu-title) {
+      font-size: 44px !important;
+    }
+
+    :deep(.mobile-title-in-container .cursor-marker) {
+      height: 34px !important;
+    }
+
+    :deep(.mobile-title-in-container .title-credit) {
+      font-size: 12px !important;
+    }
+
+    :deep(.launch-menu-section h2) {
+      font-size: 17px !important;
+    }
+
+    :deep(.launch-format-btn) {
+      padding: 12px 14px !important;
+      min-height: 37px !important;
+    }
+
+    :deep(.format-icon) {
+      font-size: 25px !important;
+    }
+
+    :deep(.format-name) {
+      font-size: 23px !important;
+    }
+
+    :deep(.coming-soon) {
+      font-size: 14px !important;
+    }
+
+    :deep(.open-file-btn) {
+      padding: 12px 14px !important;
+      min-height: 37px !important;
+      font-size: 23px !important;
+      margin-top: 18px !important;
+    }
+
+    :deep(.open-file-btn .pi) {
+      font-size: 25px !important;
+    }
+  }
+
+  @media (max-width: 380px) {
+    :deep(.mobile-title-in-container .launch-menu-title) {
+      font-size: 35px !important;
+    }
   }
 }
 </style>
