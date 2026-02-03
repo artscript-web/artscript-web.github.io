@@ -11,6 +11,7 @@ export const useProjectStore = defineStore('project', {
     // Global UI Settings
     darkMode: false,
     sceneNavVisible: true,
+    sceneTimelineVisible: false,
     episodeNavVisible: false,
     characterPanelVisible: false,
     fullPageView: false,
@@ -60,6 +61,29 @@ export const useProjectStore = defineStore('project', {
           index: item.index,
           number: i + 1,
         }))
+    },
+
+    // Scenes with runtime for timeline (Film/TV only; Book uses chapters)
+    activeScenesWithRuntime: (state, getters) => {
+      const scenes = getters.activeScenes
+      const project = state.projects.find((p) => p.id === state.activeProjectId)
+      if (!project || scenes.length === 0) return []
+
+      const lines = project.lines
+      const WORDS_PER_PAGE = 275
+      const MINUTES_PER_PAGE = 1
+
+      return scenes.map((scene, i) => {
+        const startIdx = scene.index
+        const endIdx = i < scenes.length - 1 ? scenes[i + 1].index : lines.length
+        let wordCount = 0
+        for (let j = startIdx; j < endIdx; j++) {
+          wordCount += (lines[j]?.content || '').split(/\s+/).filter(Boolean).length
+        }
+        const pages = wordCount / WORDS_PER_PAGE
+        const minutes = pages * MINUTES_PER_PAGE
+        return { ...scene, wordCount, pages, minutes }
+      })
     },
 
     activeEpisodes: (state) => {

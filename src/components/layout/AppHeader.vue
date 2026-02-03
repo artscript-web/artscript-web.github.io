@@ -179,8 +179,8 @@
 
             <div class="dropdown-divider"></div>
 
-            <button class="dropdown-item dropdown-item-disabled" disabled>
-              <i class="pi pi-book"></i> Training
+            <button class="dropdown-item" @click="store.showTrainingDialog = true; isFileMenuOpen = false">
+              <i class="pi pi-book"></i> App Tour
             </button>
             <button v-if="!props.isMobile" class="dropdown-item" @click="showShortcuts">
               <i class="pi pi-question-circle"></i> Keyboard Shortcuts (Ctrl+/)

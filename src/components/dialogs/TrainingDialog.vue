@@ -8,7 +8,7 @@
     <div class="training-dialog" @click.stop>
       <div class="training-header">
         <h2 class="training-title">
-          <i class="pi pi-book"></i> Training
+          <i class="pi pi-book"></i> App Tour
         </h2>
         <button type="button" class="training-close" @click="close" title="Close">×</button>
       </div>
@@ -78,9 +78,15 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 
-/** Path to training images in public/Photos_USE – relative so it works on GitHub Pages (e.g. /Wormhole/) and locally */
+/** Path to training images in public/Photos_USE – absolute URL for local and GitHub Pages */
 function getTrainingImagePath(filename) {
-  return `Photos_USE/${filename}`
+  const base = import.meta.env.BASE_URL || '/'
+  const root = base.endsWith('/') ? base : base + '/'
+  const path = `${root}Photos_USE/${filename}`
+  if (typeof window !== 'undefined') {
+    return new URL(path, window.location.origin).href
+  }
+  return path
 }
 
 const props = defineProps({
