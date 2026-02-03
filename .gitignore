@@ -14,5 +14,4 @@ npm-debug.log*
 *.log
 .vscode/
 
-# Ignore root Photos_USE copy folder, but keep public/Photos_USE for Training images
-/Photos_USE copy/
+Photos_USE/
