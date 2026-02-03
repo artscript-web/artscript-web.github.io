@@ -88,6 +88,7 @@
         <button
           v-if="isTVShow"
           class="seasons-toggle-button"
+          data-training="episodes-sidebar-toggle"
           @click="store.episodeNavVisible = !store.episodeNavVisible"
           title="Toggle Seasons"
         >
@@ -114,6 +115,8 @@
     <SpellGrammarDialog v-model:visible="store.showSpellGrammarDialog" />
     <TimeReminderDialog v-model:visible="store.showTimeReminder" />
     <TrainingDialog :visible="store.showTrainingDialog" @update:visible="store.showTrainingDialog = $event" />
+    <TrainingChoiceDialog />
+    <InteractiveTrainingOverlay :visible="store.showInteractiveTraining" @update:visible="store.showInteractiveTraining = $event" />
     <ShortcutsDialog />
 
     <!-- About Dialog -->
@@ -223,6 +226,8 @@ import ScriptAnalysisDialog from '@/components/dialogs/ScriptAnalysisDialog.vue'
 import SpellGrammarDialog from '@/components/dialogs/SpellGrammarDialog.vue'
 import TimeReminderDialog from '@/components/dialogs/TimeReminderDialog.vue'
 import TrainingDialog from '@/components/dialogs/TrainingDialog.vue'
+import TrainingChoiceDialog from '@/components/dialogs/TrainingChoiceDialog.vue'
+import InteractiveTrainingOverlay from '@/components/dialogs/InteractiveTrainingOverlay.vue'
 import ShortcutsDialog from '@/components/dialogs/ShortcutsDialog.vue'
 // Character panel is now inside SideBar (Scenes | Characters tabs)
 

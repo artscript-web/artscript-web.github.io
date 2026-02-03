@@ -26,6 +26,9 @@ export const useProjectStore = defineStore('project', {
     showScriptAnalysis: false,
     showSpellGrammarDialog: false,
     showTrainingDialog: false,
+    showTrainingChoiceDialog: false, // choice between Manual and Interactive training
+    showInteractiveTraining: false,
+    openFileMenuForTraining: false, // when true, AppHeader keeps file menu open for training step
 
     // Settings
     autoSaveInterval: 30000, // 30 seconds

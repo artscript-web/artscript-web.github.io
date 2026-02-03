@@ -5,12 +5,13 @@
     :modal="true"
     class="title-page-dialog"
     :style="{ width: '50vw' }"
+    data-training="title-page-dialog"
   >
     <div class="field-container">
       <!-- TV Show Format -->
       <template v-if="isTVShow">
         <!-- Series Title (Static) -->
-        <div class="field">
+        <div class="field" data-training="title-page-field-title">
           <label>Series Title</label>
           <InputText 
             v-model="titlePage.title" 
@@ -33,7 +34,7 @@
         </div>
 
         <!-- Episode Title (Dynamic, per episode) -->
-        <div class="field">
+        <div class="field" data-training="title-page-field-episode-title">
           <label>Episode Title</label>
           <InputText 
             v-model="activeEpisodeTitlePage.episodeTitle" 
@@ -46,36 +47,36 @@
 
       <!-- Film/Book Format (Original) -->
       <template v-else>
-        <div class="field">
+        <div class="field" data-training="title-page-field-title">
           <label>Title</label>
           <InputText v-model="titlePage.title" class="w-full" placeholder="SCRIPT TITLE" />
         </div>
       </template>
 
       <!-- Common Fields -->
-      <div class="field">
+      <div class="field" data-training="title-page-field-credit">
         <label>Credit</label>
         <InputText v-model="titlePage.credit" class="w-full" placeholder="by" />
       </div>
 
-      <div class="field">
+      <div class="field" data-training="title-page-field-author">
         <label>Author</label>
         <InputText v-model="titlePage.author" class="w-full" placeholder="Author Name" />
       </div>
 
-      <div class="field">
+      <div class="field" data-training="title-page-field-draft">
         <label>Draft / Version</label>
         <InputText v-model="titlePage.draft" class="w-full" placeholder="Draft 1.0" />
       </div>
 
-      <div class="field">
+      <div class="field" data-training="title-page-field-contact">
         <label>Contact Info</label>
         <Textarea v-model="titlePage.contact" rows="3" class="w-full" />
       </div>
     </div>
 
     <template #footer>
-      <Button label="Close" icon="pi pi-check" @click="saveAndClose" />
+      <Button label="Close" icon="pi pi-check" data-training="title-page-close" @click="saveAndClose" />
     </template>
   </Dialog>
 </template>

@@ -2,7 +2,7 @@
   <aside v-if="store.episodeNavVisible" class="sidebar episode-navigator">
     <div class="sidebar-header">
       <h3>Seasons</h3>
-      <button class="add-season-btn" title="Add Season" @click="store.addNewSeason">
+      <button class="add-season-btn" data-training="add-season-btn" title="Add Season" @click="store.addNewSeason">
         <i class="pi pi-plus"></i>
       </button>
     </div>
@@ -20,6 +20,7 @@
           <span class="season-title">Season {{ season.seasonNumber }}</span>
           <button
             class="add-episode-btn"
+            data-training="add-episode-btn"
             title="Add Episode"
             @click.stop="store.addEpisode(seasonIdx)"
           >

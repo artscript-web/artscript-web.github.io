@@ -5,7 +5,7 @@
       <div class="toolbar-left">
         <!-- File Menu -->
         <div class="dropdown" :class="{ active: isFileMenuOpen }" @click.stop="toggleFileMenu">
-          <button class="icon-btn dropdown-btn" title="File Menu" @click.stop="toggleFileMenu">
+          <button class="icon-btn dropdown-btn" data-training="file-menu" title="File Menu" @click.stop="toggleFileMenu">
             <span class="hamburger-icon"> <span></span><span></span><span></span> </span>
           </button>
 
@@ -53,7 +53,7 @@
 
             <div class="dropdown-divider"></div>
 
-            <button class="dropdown-item" @click="store.showTitleDialog = true">
+            <button class="dropdown-item" data-training="title-page-menu-item" @click="store.showTitleDialog = true; isFileMenuOpen = false">
               <i class="pi pi-file"></i> Title Page
             </button>
 
@@ -179,9 +179,14 @@
 
             <div class="dropdown-divider"></div>
 
-            <button class="dropdown-item dropdown-item-disabled" disabled>
-              <i class="pi pi-book"></i> Training
-            </button>
+            <template v-if="!props.isMobile">
+              <button class="dropdown-item dropdown-item-disabled" disabled title="App Tour (coming soon)">
+                <i class="pi pi-map"></i> App Tour
+              </button>
+              <button class="dropdown-item" @click="store.showTrainingChoiceDialog = true; isFileMenuOpen = false">
+                <i class="pi pi-book"></i> Training
+              </button>
+            </template>
             <button v-if="!props.isMobile" class="dropdown-item" @click="showShortcuts">
               <i class="pi pi-question-circle"></i> Keyboard Shortcuts (Ctrl+/)
             </button>
@@ -207,6 +212,7 @@
         <button
           v-if="!props.isMobile"
           class="icon-btn"
+          data-training="spell-check"
           :class="{ active: store.spellCheckEnabled }"
           :title="store.spellCheckEnabled ? 'Spell check on' : 'Spell check off'"
           @click="store.spellCheckEnabled = !store.spellCheckEnabled"
@@ -242,6 +248,7 @@
           v-if="store.activeProject"
           type="text"
           class="project-name-input"
+          data-training="project-title"
           v-model="store.activeProject.name"
           spellcheck="false"
         />
@@ -262,6 +269,7 @@
         <button
           v-if="!props.isMobile"
           class="icon-btn"
+          data-training="full-page-view"
           :class="{ active: store.fullPageView }"
           title="Toggle Full Page View"
           @click="store.toggleFullPageView"
@@ -270,7 +278,7 @@
         </button>
 
         <!-- Dark Mode Toggle (hidden on mobile - in dropdown) -->
-        <label v-if="!props.isMobile" class="switch">
+        <label v-if="!props.isMobile" class="switch" data-training="dark-mode">
           <input type="checkbox" :checked="store.darkMode" @change="store.toggleDarkMode" />
           <span class="slider"></span>
         </label>
@@ -330,7 +338,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useRouter } from 'vue-router'
 import TabBar from './TabBar.vue'
@@ -405,7 +413,13 @@ const reminderTooltip = computed(() => {
 
 const toggleFileMenu = () => {
   isFileMenuOpen.value = !isFileMenuOpen.value
+  if (!isFileMenuOpen.value) store.openFileMenuForTraining = false
 }
+
+// When training wants to highlight Title Page, open the file menu
+watch(() => store.openFileMenuForTraining, (open) => {
+  if (open) isFileMenuOpen.value = true
+})
 
 // Close menu when clicking outside
 const closeMenuOnOutsideClick = (event) => {

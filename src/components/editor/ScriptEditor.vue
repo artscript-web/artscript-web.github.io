@@ -614,6 +614,52 @@ const getCurrentLineFromSelection = () => {
   return line ? { line, index: idx } : null
 }
 
+// True if current selection is inside the editor (a .line-content under .script-editor)
+const isSelectionInEditor = () => {
+  const root = editorRootRef.value
+  if (!root) return false
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) return false
+  const range = sel.getRangeAt(0)
+  let node = range.startContainer
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentElement
+  const lineContent = node?.closest?.('.line-content')
+  return lineContent != null && root.contains(lineContent)
+}
+
+// Put cursor into the nearest focusable line (e.g. after Backspace removes nodes and selection is lost)
+const restoreCursorToNearestLine = () => {
+  const root = editorRootRef.value
+  if (!root) return
+  const refs = lineRefs.value
+  const idx = Math.min(Math.max(0, currentLineIndex.value), refs.length - 1)
+  let el = refs[idx]
+  if (!el || !root.contains(el)) {
+    for (let i = 0; i < refs.length; i++) {
+      if (refs[i] && root.contains(refs[i])) {
+        el = refs[i]
+        currentLineIndex.value = i
+        break
+      }
+    }
+  }
+  if (!el) {
+    const first = root.querySelector('.line-content')
+    if (first) el = first
+  }
+  if (!el) return
+  if (!el.firstChild) {
+    el.appendChild(document.createTextNode('\u200B'))
+  }
+  el.focus()
+  const range = document.createRange()
+  const sel = window.getSelection()
+  range.selectNodeContents(el)
+  range.collapse(true)
+  sel?.removeAllRanges()
+  sel?.addRange(range)
+}
+
 // Single contenteditable: delegate keydown to line handler
 const handleEditorKeyDown = (event) => {
   const curr = getCurrentLineFromSelection()
@@ -622,6 +668,17 @@ const handleEditorKeyDown = (event) => {
     handleKeyDown(event, curr.line, curr.index)
   } else {
     handleKeyDown(event, lines.value[0], 0)
+  }
+
+  // Backspace: after browser deletes, ensure selection stays in editor; restore if lost (e.g. when holding Backspace)
+  if (event.key === 'Backspace') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (editorRootRef.value && !isSelectionInEditor()) {
+          restoreCursorToNearestLine()
+        }
+      })
+    })
   }
 }
 
@@ -770,44 +827,139 @@ const handleKeyDown = (event, line, index) => {
     cycleLineType(line.id, line.type)
   }
 
-  // Backspace at start of line - delete empty line above or merge with previous
+  // Backspace: Word-like behavior — selection = delete selection; at start of block = move cursor only (no merge)
   else if (event.key === 'Backspace') {
     const selection = window.getSelection()
-    if (!selection.rangeCount) return
-    
-    const range = selection.getRangeAt(0)
-    const currentText = currentElement.innerText || currentElement.textContent || ''
-    
-    // Get accurate cursor position
-    const preRange = range.cloneRange()
-    preRange.selectNodeContents(currentElement)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    const cursorPosition = preRange.toString().length
+    if (!selection?.rangeCount) return
 
-    // Only handle if at start of line and not first line
-    if (cursorPosition === 0 && index > 0) {
+    const range = selection.getRangeAt(0)
+    const currentElement = lineRefs.value[index] ?? event.target
+    const cursorAtStart = (() => {
+      try {
+        const pre = document.createRange()
+        pre.selectNodeContents(currentElement)
+        pre.setEnd(range.startContainer, range.startOffset)
+        return pre.toString().length === 0
+      } catch (_) {
+        return false
+      }
+    })()
+
+    // 1) There is a selection — delete manually to preserve block structure
+    if (!range.collapsed) {
       event.preventDefault()
-      
-      const previousLine = lines.value[index - 1]
-      const previousText = previousLine.content.trim()
-      
-      // If previous line is empty, delete it
-      if (previousText.length === 0) {
-        store.pushToHistory()
-        store.deleteLine(previousLine.id)
-        
-        nextTick(() => {
-          const currentElementAfter = lineRefs.value[index - 1]
-          if (currentElementAfter) {
-            currentElementAfter.focus()
-            moveCursorToStart(currentElementAfter)
+      store.pushToHistory()
+
+      const startLineEl = (range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer)?.closest?.('.line-content')
+      const startLineIndexEl = startLineEl?.closest?.('[data-line-index]')
+      const startLineIndex = startLineIndexEl != null ? parseInt(startLineIndexEl.getAttribute('data-line-index'), 10) : index
+      const startOffset = (() => {
+        if (!startLineEl) return 0
+        try {
+          const r = document.createRange()
+          r.selectNodeContents(startLineEl)
+          r.setEnd(range.startContainer, range.startOffset)
+          return r.toString().length
+        } catch (_) {
+          return 0
+        }
+      })()
+
+      const endLineEl = (range.endContainer.nodeType === Node.TEXT_NODE ? range.endContainer.parentElement : range.endContainer)?.closest?.('.line-content')
+      const selectionInOneLine = startLineEl && endLineEl && startLineEl === endLineEl
+
+      if (selectionInOneLine && startLineEl) {
+        // Single line: delete range and sync (preserves block)
+        range.deleteContents()
+        const newContent = (startLineEl.innerText || startLineEl.textContent || '').replace(/\u200B/g, '')
+        const line = lines.value[startLineIndex]
+        if (line) store.updateLine(line.id, newContent)
+        currentLineIndex.value = startLineIndex
+        requestAnimationFrame(() => {
+          const el = lineRefs.value[startLineIndex]
+          if (el) {
+            ensureBlockHasContent(el)
+            el.focus()
+            const len = (el.innerText || '').replace(/\u200B/g, '').length
+            restoreCursorInElement(el, Math.min(startOffset, len), Math.min(startOffset, len))
           }
+          scheduleBackspaceSanitize()
         })
       } else {
-        // Previous line is not empty, merge with it
-        mergeWithPreviousLine(line.id, index)
+        // Multi-line: update each affected line in store and DOM (no browser merge)
+        const root = editorRootRef.value
+        const allLineContents = root ? Array.from(root.querySelectorAll('.line-content')) : []
+        const endLineIndexEl = endLineEl?.closest?.('[data-line-index]')
+        const endLineIndex = endLineIndexEl != null ? parseInt(endLineIndexEl.getAttribute('data-line-index'), 10) : startLineIndex
+
+        for (let i = 0; i < allLineContents.length; i++) {
+          const lineEl = allLineContents[i]
+          const lineId = lineEl.closest('.script-line')?.getAttribute('data-line-id')
+          const lineIndexEl = lineEl.closest('[data-line-index]')
+          const lineIndex = lineIndexEl != null ? parseInt(lineIndexEl.getAttribute('data-line-index'), 10) : i
+          if (!lineId || lineIndex < 0) continue
+          const fullText = (lineEl.innerText || lineEl.textContent || '').replace(/\u200B/g, '')
+          let newText = fullText
+          try {
+            if (lineEl.contains(range.startContainer) && lineEl.contains(range.endContainer)) {
+              const r1 = document.createRange()
+              r1.selectNodeContents(lineEl)
+              r1.setEnd(range.startContainer, range.startOffset)
+              const r2 = document.createRange()
+              r2.selectNodeContents(lineEl)
+              r2.setStart(range.endContainer, range.endOffset)
+              newText = r1.toString() + r2.toString()
+            } else if (lineEl.contains(range.startContainer)) {
+              const r = document.createRange()
+              r.selectNodeContents(lineEl)
+              r.setEnd(range.startContainer, range.startOffset)
+              newText = r.toString()
+            } else if (lineEl.contains(range.endContainer)) {
+              const r = document.createRange()
+              r.selectNodeContents(lineEl)
+              r.setStart(range.endContainer, range.endOffset)
+              newText = r.toString()
+            } else if (lineIndex > startLineIndex && lineIndex < endLineIndex) {
+              newText = ''
+            } else {
+              continue
+            }
+          } catch (_) {
+            continue
+          }
+          store.updateLine(lineId, newText)
+          lineEl.innerText = newText || '\u200B'
+        }
+        currentLineIndex.value = startLineIndex
+        nextTick(() => {
+          const el = lineRefs.value[startLineIndex]
+          if (el) {
+            ensureBlockHasContent(el)
+            el.focus()
+            const len = (el.innerText || '').replace(/\u200B/g, '').length
+            restoreCursorInElement(el, Math.min(startOffset, len), Math.min(startOffset, len))
+          }
+          scheduleBackspaceSanitize()
+        })
       }
+      return
     }
+
+    // 2) Cursor at start of block — move to end of previous line only (no merge, no delete)
+    if (cursorAtStart && index > 0) {
+      event.preventDefault()
+      const prevEl = lineRefs.value[index - 1]
+      if (prevEl) {
+        prevEl.focus()
+        moveCursorToEnd(prevEl)
+        currentLineIndex.value = index - 1
+      }
+      scheduleBackspaceSanitize()
+      return
+    }
+
+    // 3) Cursor in middle of text — let browser handle one-char delete; sanitizer runs debounced
+    scheduleBackspaceSanitize()
   }
 
   // Arrow keys - navigate between lines
@@ -1018,6 +1170,47 @@ const captureCursorPosition = () => {
   preRange.setEnd(range.endContainer, range.endOffset)
   const endOffset = preRange.toString().length
   return { index, startOffset, endOffset }
+}
+
+// Sync all line content from DOM to store (after programmatic deletion)
+const syncAllLinesFromDOM = () => {
+  const root = editorRootRef.value
+  if (!root) return
+  root.querySelectorAll('.script-line').forEach((scriptLine) => {
+    const contentEl = scriptLine.querySelector('.line-content')
+    const lineId = scriptLine.getAttribute('data-line-id')
+    const lineIndexEl = scriptLine.closest('[data-line-index]')
+    const index = lineIndexEl != null ? parseInt(lineIndexEl.getAttribute('data-line-index'), 10) : -1
+    if (!contentEl || !lineId || index < 0) return
+    const line = lines.value.find((l) => l.id === lineId)
+    if (!line) return
+    const newContent = (contentEl.innerText || contentEl.textContent || '').replace(/\u200B/g, '')
+    if (newContent !== line.content) {
+      store.updateLine(line.id, newContent)
+    }
+  })
+}
+
+// Ensure a single block (line-content) has at least one child so it stays focusable
+const ensureBlockHasContent = (el) => {
+  if (!el || !el.closest?.('.script-editor')) return
+  if (!el.firstChild) {
+    el.appendChild(document.createTextNode('\u200B'))
+  }
+}
+
+// Debounced sanitizer after Backspace: ensure editor always has at least one block and each block has content (no full re-render)
+let backspaceSanitizeTimer = null
+const BACKSPACE_SANITIZE_MS = 120
+const scheduleBackspaceSanitize = () => {
+  if (backspaceSanitizeTimer) clearTimeout(backspaceSanitizeTimer)
+  backspaceSanitizeTimer = setTimeout(() => {
+    backspaceSanitizeTimer = null
+    const root = editorRootRef.value
+    if (!root) return
+    const lineContents = root.querySelectorAll('.line-content')
+    lineContents.forEach((el) => ensureBlockHasContent(el))
+  }, BACKSPACE_SANITIZE_MS)
 }
 
 // Restore cursor from pendingCursorRestore and clear it (called in nextTick after DOM updates)
