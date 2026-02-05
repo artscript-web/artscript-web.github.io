@@ -307,11 +307,14 @@
       <div v-if="!props.isMobile" class="toolbar-center">
         <input
           v-if="store.activeProject"
+          ref="titleInputRef"
           type="text"
           class="project-name-input"
           data-training="project-title"
           v-model="store.activeProject.name"
+          :placeholder="titlePlaceholder"
           spellcheck="false"
+          @keydown.enter="onTitleEnter"
         />
       </div>
 
@@ -451,6 +454,7 @@ import CreateProfileModal from '@/components/dialogs/CreateProfileModal.vue'
 const props = defineProps({
   isMobile: { type: Boolean, default: false },
 })
+const emit = defineEmits(['open-about', 'open-profile-sheet', 'title-enter'])
 
 const store = useProjectStore()
 const userStore = useUserStore()
@@ -458,9 +462,7 @@ const isTVShow = computed(() => store.activeProject?.format === 'TV Show')
 
 const createProfileModalVisible = ref(false)
 const createProfilePromptMessage = ref('')
-const isGuestAtProjectLimit = computed(
-  () => !userStore.isLoggedIn && store.projects.length >= 1
-)
+const isGuestAtProjectLimit = computed(() => false) // Unlimited local projects for now
 const displayProfileLabel = computed(() => {
   const nick = userStore.nickname?.trim()
   if (nick) {
@@ -492,6 +494,20 @@ const asxproCodeError = ref('')
 const ASXPRO_SECRET_CODE = 'TV98SCRIPT6'
 
 const stats = computed(() => store.scriptStats)
+
+const titleInputRef = ref(null)
+const titlePlaceholder = computed(() => {
+  const format = store.activeProject?.format
+  if (format === 'TV Show') return 'Untitled Episode'
+  if (format === 'Book') return 'Untitled Book'
+  return 'Untitled Script'
+})
+
+function onTitleEnter(event) {
+  event.preventDefault()
+  titleInputRef.value?.blur()
+  emit('title-enter')
+}
 
 // Calculate days remaining until deadline
 const daysRemaining = computed(() => {

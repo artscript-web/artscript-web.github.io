@@ -5,6 +5,7 @@
       :isMobile="isMobile"
       @open-about="showAboutDialog = true"
       @open-profile-sheet="showProfileSheet = true"
+      @title-enter="focusScriptEditor"
     />
 
     <!-- Auto-save indicator -->
@@ -262,6 +263,12 @@ const store = useProjectStore()
 const userStore = useUserStore()
 const editorRef = ref(null)
 const isMobile = ref(typeof window !== 'undefined' && window.innerWidth <= 1024)
+
+function focusScriptEditor() {
+  nextTick(() => {
+    editorRef.value?.focusFirstLine()
+  })
+}
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 1024

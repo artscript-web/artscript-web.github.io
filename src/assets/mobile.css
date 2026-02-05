@@ -192,7 +192,8 @@
 
   .line-dialogue {
     margin-left: 80px !important;
-    margin-right: 80px !important;
+    width: auto !important;
+    max-width: none !important;
   }
 
   .line-parenthetical {

@@ -294,8 +294,15 @@ const calculatePageBreaks = () => {
   })
 }
 
+// When true, skip the next input sync (used during Enter split to prevent overwriting our state)
+const skipNextInputSync = ref(false)
+
 // Single contenteditable: sync DOM to store on input (walk all lines)
 const handleEditorInput = () => {
+  if (skipNextInputSync.value) {
+    skipNextInputSync.value = false
+    return
+  }
   inputDrivenUpdate.value = true
   nextTick(() => { inputDrivenUpdate.value = false })
 
@@ -713,112 +720,94 @@ const handleKeyDown = (event, line, index) => {
     return
   }
 
-  // Enter key - never let the browser handle it; always split line at cursor and create new block
+  // Enter key - split at cursor, create new Action block, single atomic state update
   if (event.key === 'Enter') {
     event.preventDefault()
     event.stopPropagation()
+    skipNextInputSync.value = true
     skipNextCursorRestore.value = true
 
-    // Resolve current line element (must be the .line-content for this line)
     const lineEl = lineRefs.value[index]
     const currentElement = lineEl || (event.target.classList?.contains('line-content') ? event.target : null)
     if (!currentElement) return
 
     const currentText = (currentElement.innerText || currentElement.textContent || '').replace(/\u200B/g, '')
-    let cursorPosition = 0
-
-    const selection = window.getSelection()
-    if (selection?.rangeCount) {
-      const range = selection.getRangeAt(0)
+    let offset = 0
+    const sel = window.getSelection()
+    if (sel?.rangeCount) {
+      const range = sel.getRangeAt(0)
       try {
-        // Cursor position: from start of this line's content to selection start
         const preRange = document.createRange()
         preRange.selectNodeContents(currentElement)
         if (currentElement.contains(range.startContainer)) {
           preRange.setEnd(range.startContainer, range.startOffset)
-          cursorPosition = preRange.toString().length
+          offset = preRange.toString().length
         } else {
-          cursorPosition = currentText.length
+          offset = currentText.length
         }
       } catch (_) {
-        cursorPosition = currentText.length
+        offset = currentText.length
       }
     } else {
-      cursorPosition = currentText.length
+      offset = currentText.length
     }
-    cursorPosition = Math.max(0, Math.min(cursorPosition, currentText.length))
+    offset = Math.max(0, Math.min(offset, currentText.length))
 
-    // Cursor at start of first line and line empty: insert empty line at start
-    if (index === 0 && cursorPosition === 0 && currentText.length === 0) {
-      store.pushToHistory()
-      const emptyLine = { id: uuidv4(), type: 'action', content: '' }
-      store.activeProject.lines.unshift(emptyLine)
-      store.activeProject.updatedAt = Date.now()
-      nextTick(() => {
-        nextTick(() => {
-          const firstElement = lineRefs.value[0]
-          if (firstElement) {
-            firstElement.contentEditable = 'true'
-            firstElement.focus()
-            placeCursorAtEnd(firstElement)
-          }
-        })
-      })
-      return
-    }
+    const textBefore = currentText.substring(0, offset)
+    const textAfter = currentText.substring(offset)
 
-    // Scene heading, cursor at start: insert empty line above
-    if (line.type === 'scene-heading' && cursorPosition === 0) {
-      store.pushToHistory()
-      const emptyLine = { id: uuidv4(), type: 'action', content: '' }
-      store.activeProject.lines.splice(index, 0, emptyLine)
-      store.activeProject.updatedAt = Date.now()
-      updateContdBelow(index)
-      nextTick(() => {
-        nextTick(() => {
-          const newElement = lineRefs.value[index]
-          if (newElement) {
-            newElement.contentEditable = 'true'
-            newElement.focus()
-            placeCursorAtEnd(newElement)
-          }
-        })
-      })
-      return
-    }
+    const project = store.activeProject
+    if (!project?.lines) return
 
-    // Split line at cursor: before stays on current line, after goes to new line
-    const beforeText = currentText.substring(0, cursorPosition)
-    const afterText = currentText.substring(cursorPosition)
+    const arr = project.lines
+    const idx = arr.findIndex((l) => l.id === line.id)
+    if (idx < 0) return
 
-    store.updateLine(line.id, beforeText)
+    store.pushToHistory()
 
+    const modifiedCurrent = { ...arr[idx], content: textBefore }
     let nextType
     if (isBookFormat.value) {
       nextType = 'body-text'
+    } else if (line.type === 'character') {
+      nextType = 'dialogue'
     } else if (line.type === 'scene-heading') {
       nextType = 'action'
+    } else if (line.type === 'dialogue') {
+      nextType = textAfter.trim() ? 'dialogue' : 'action'
+    } else if (line.type === 'action') {
+      nextType = 'action'
+    } else if (line.type === 'parenthetical') {
+      nextType = 'dialogue'
     } else {
-      nextType = getNextLineType(line.type)
+      nextType = 'action'
     }
+    const newBlock = { id: uuidv4(), type: nextType, content: textAfter }
 
-    const newLine = store.addLine(line.id, nextType)
-    store.updateLine(newLine.id, afterText)
+    arr.splice(idx, 1, modifiedCurrent, newBlock)
+    project.updatedAt = Date.now()
 
     if (nextType === 'character') {
-      nextTick(() => updateContdStatus(newLine.id, index + 1))
+      nextTick(() => updateContdStatus(newBlock.id, idx + 1))
     }
 
-    // Wait for Vue to render the new .line-content, then sync DOM and put cursor at end of new line
+    isExternalUpdate.value = true
     nextTick(() => {
       nextTick(() => {
-        const nextElement = lineRefs.value[index + 1]
-        if (nextElement) {
-          nextElement.innerText = afterText || '\u200B'
-          nextElement.contentEditable = 'true'
-          nextElement.focus()
-          placeCursorAtEnd(nextElement)
+        const currentEl = lineRefs.value[idx]
+        if (currentEl) {
+          currentEl.innerText = textBefore || '\u200B'
+          ensureBlockHasContent(currentEl)
         }
+        const nextElement = lineRefs.value[idx + 1]
+        if (nextElement) {
+          nextElement.innerText = textAfter || '\u200B'
+          ensureBlockHasContent(nextElement)
+          nextElement.focus()
+          placeCursorAtStart(nextElement)
+        }
+        currentLineIndex.value = idx + 1
+        isExternalUpdate.value = false
       })
     })
   }
@@ -1014,9 +1003,9 @@ const getNextLineType = (currentType) => {
     'scene-heading': 'action',
     action: 'action',
     character: 'dialogue',
-    dialogue: 'action', // After dialogue, force action line
+    dialogue: 'dialogue', // Remain dialogue until double-Enter (handled in Enter handler)
     parenthetical: 'dialogue',
-    transition: 'action', // After transition, force action (not scene heading)
+    transition: 'action',
   }
 
   return typeFlow[currentType] || 'action'
@@ -1076,18 +1065,169 @@ const mergeWithPreviousLine = (lineId, index) => {
   })
 }
 
-// Handle paste - insert as plain text
+// Custom paste: sanitize to plain text, screenplay logic (scene/character/dialogue/action), inject blocks
 const handlePaste = (event) => {
   event.preventDefault()
 
-  const text = event.clipboardData.getData('text/plain')
-  const selection = window.getSelection()
+  // Sanitize: convert HTML to plain text if needed
+  let text = event.clipboardData.getData('text/plain')
+  if (!text && event.clipboardData.types.includes('text/html')) {
+    const html = event.clipboardData.getData('text/html')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    text = (div.textContent || div.innerText || '').replace(/\u00A0/g, ' ')
+  }
+  if (!text) return
 
-  if (!selection.rangeCount) return
+  const rawLines = text.split(/\r\n|\r|\n/)
 
-  selection.deleteFromDocument()
-  selection.getRangeAt(0).insertNode(document.createTextNode(text))
-  selection.collapseToEnd()
+  const isSceneHeading = (line) => {
+    const t = (line || '').trim().toUpperCase()
+    return (
+      t.startsWith('INT.') ||
+      t.startsWith('EXT.') ||
+      t.startsWith('ΕΣΩ.') ||
+      t.startsWith('ΕΞΩ.')
+    )
+  }
+
+  const isCharacter = (line) => {
+    const t = (line || '').trim()
+    if (!t) return false
+    if (isSceneHeading(t)) return false
+    return t === t.toUpperCase() && /[A-Z]/.test(t)
+  }
+
+  // Build blocks: action buffer, dialogue buffer (after character until empty line)
+  const blocks = []
+  const actionBuffer = []
+  const dialogueBuffer = []
+  let inDialogueBlock = false
+
+  const flushActionBuffer = () => {
+    if (actionBuffer.length > 0) {
+      blocks.push({ type: 'action', content: actionBuffer.join('\n') })
+      actionBuffer.length = 0
+    }
+  }
+
+  const flushDialogueBuffer = () => {
+    if (dialogueBuffer.length > 0) {
+      blocks.push({ type: 'dialogue', content: dialogueBuffer.join('\n') })
+      dialogueBuffer.length = 0
+      inDialogueBlock = false
+    }
+  }
+
+  for (const raw of rawLines) {
+    const trimmed = raw.replace(/\s+/g, ' ').trim()
+    const isEmpty = !trimmed
+
+    if (isEmpty) {
+      flushDialogueBuffer()
+      flushActionBuffer()
+      continue
+    }
+
+    if (inDialogueBlock) {
+      if (isCharacter(trimmed)) {
+        flushDialogueBuffer()
+        blocks.push({ type: 'character', content: trimmed })
+        inDialogueBlock = true
+      } else if (isSceneHeading(trimmed)) {
+        flushDialogueBuffer()
+        blocks.push({ type: 'scene-heading', content: trimmed })
+      } else {
+        dialogueBuffer.push(trimmed)
+      }
+      continue
+    }
+
+    if (isSceneHeading(trimmed)) {
+      flushActionBuffer()
+      blocks.push({ type: 'scene-heading', content: trimmed })
+    } else if (isCharacter(trimmed)) {
+      flushActionBuffer()
+      blocks.push({ type: 'character', content: trimmed })
+      inDialogueBlock = true
+    } else {
+      // Collect action lines; flush only when hitting Character or Scene
+      actionBuffer.push(trimmed)
+    }
+  }
+  flushDialogueBuffer()
+  flushActionBuffer()
+
+  if (blocks.length === 0) return
+
+  const captured = captureCursorPosition()
+  const idx = captured ? captured.index : lines.value.length - 1
+  const startOffset = captured?.startOffset ?? 0
+  const endOffset = captured?.endOffset ?? 0
+
+  const linesArray = lines.value
+  if (!linesArray.length) return
+
+  const currentLine = linesArray[idx]
+  if (!currentLine) return
+
+  const beforeCursor = (currentLine.content || '').slice(0, startOffset)
+  const afterCursor = (currentLine.content || '').slice(endOffset)
+
+  store.pushToHistory()
+
+  const toBlocks = blocks.map((b) => ({ id: uuidv4(), type: b.type, content: b.content }))
+
+  if (toBlocks.length === 1) {
+    const newContent = beforeCursor + toBlocks[0].content + afterCursor
+    currentLine.content = newContent
+    currentLine.type = toBlocks[0].type
+    store.activeProject.updatedAt = Date.now()
+    pendingCursorRestore.value = {
+      index: idx,
+      startOffset: beforeCursor.length + toBlocks[0].content.length,
+      endOffset: beforeCursor.length + toBlocks[0].content.length,
+    }
+    nextTick(() => {
+      restorePendingCursor()
+      if (toBlocks[0].type === 'character') updateContdStatus(currentLine.id, idx)
+    })
+    return
+  }
+
+  currentLine.content = beforeCursor + toBlocks[0].content
+  currentLine.type = toBlocks[0].type
+
+  const toInsert = toBlocks.slice(1, -1).map((b) => ({ id: uuidv4(), type: b.type, content: b.content }))
+  const lastBlock = toBlocks[toBlocks.length - 1]
+  toInsert.push({
+    id: uuidv4(),
+    type: lastBlock.type,
+    content: lastBlock.content + afterCursor,
+  })
+
+  const insertIdx = idx + 1
+  const project = store.activeProject
+  for (let i = 0; i < toInsert.length; i++) {
+    project.lines.splice(insertIdx + i, 0, toInsert[i])
+  }
+  project.updatedAt = Date.now()
+
+  const lastInserted = toInsert[toInsert.length - 1]
+  pendingCursorRestore.value = {
+    index: insertIdx + toInsert.length - 1,
+    startOffset: lastInserted.content.length - afterCursor.length,
+    endOffset: lastInserted.content.length - afterCursor.length,
+  }
+  nextTick(() => {
+    restorePendingCursor()
+    const project = store.activeProject
+    if (project?.lines) {
+      project.lines.forEach((line, index) => {
+        if (line.type === 'character') updateContdStatus(line.id, index)
+      })
+    }
+  })
 }
 
 // Click on main editor container: if user clicked empty space below content, focus last line and put caret at end
@@ -2023,6 +2163,18 @@ onUnmounted(() => {
     window.visualViewport.removeEventListener('scroll', updateToolbarBottomOffset)
   }
 })
+
+function focusFirstLine() {
+  if (lines.value.length === 0) return
+  const firstEl = lineRefs.value[0]
+  if (firstEl) {
+    firstEl.focus()
+    placeCursorAtStart(firstEl)
+    currentLineIndex.value = 0
+  }
+}
+
+defineExpose({ focusFirstLine })
 </script>
 
 <style scoped>
@@ -2165,7 +2317,10 @@ onUnmounted(() => {
   transition: all 0.3s ease;
 }
 
-/* Action – padding only */
+/* Action – padding only; pre-wrap respects internal \n without splitting semantic block */
+.line-action .line-content {
+  white-space: pre-wrap;
+}
 .line-action {
   padding-bottom: 12pt;
   margin: 0;
@@ -2183,10 +2338,11 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
-/* Dialogue */
+/* Dialogue – fixed width so text wraps within boundaries, not into new blocks */
 .line-dialogue {
-  margin-left: 156px;
-  margin-right: 156px;
+  margin-left: 1.2in;
+  width: 3.5in;
+  max-width: 3.5in;
   padding-bottom: 12pt;
   margin-top: 0;
   margin-bottom: 0;

@@ -22,7 +22,7 @@ import {
 } from '@/services/firebase'
 
 const STORAGE_KEY = 'artscript_user_data'
-const MAX_PROJECTS = 4
+const MAX_PROJECTS = 999999 // Effectively unlimited for now
 
 const defaultData = () => ({
   user: null,
